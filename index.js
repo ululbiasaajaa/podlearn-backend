@@ -43,8 +43,9 @@ setInterval(() => {
     files.forEach((file) => {
       const filePath = path.join(tempAudioDir, file);
       const stats = fs.statSync(filePath);
-      const fileCreatedTime = stats.birthTimeMs || stats.ctimeMs || stats.mtimeMs;
-      if (now - fileCreatedTime > maxAgeMs) {
+      const fileCreatedTime = stats.birthtimeMs || stats.ctimeMs || stats.mtimeMs;
+      const fileAge = now - fileCreatedTime;
+      if (fileAge > maxAgeMs && fileAge > 60000) {
         fs.unlinkSync(filePath);
         console.log(`🧹 [Cleanup] File temp audio dihapus: ${file}`);
       }
