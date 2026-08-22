@@ -1,0 +1,6 @@
+node_modules/
+uploads/
+temp-audio/
+.env
+*.mp3
+concat_list_*.txt

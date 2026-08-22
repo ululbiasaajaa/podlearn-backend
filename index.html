@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PodLearn - AI Podcast Generator</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-amber-50/50 text-slate-800 min-h-screen p-6 md:p-12">
+  <div class="max-w-3xl mx-auto space-y-8">
+    
+    <!-- Header -->
+    <header class="text-center space-y-2">
+      <div class="inline-flex items-center justify-center p-3 bg-violet-100 text-violet-600 rounded-2xl mb-2">
+        <span class="text-3xl">🎙️</span>
+      </div>
+      <h1 class="text-4xl font-black tracking-tight text-slate-900">PodLearn</h1>
+      <p class="text-slate-500 font-medium">Ubah materi naskah / dokumen PDF jadi podcast interaktif secara otomatis!</p>
+    </header>
+
+    <!-- Form Input & Upload PDF -->
+    <div class="bg-white p-6 md:p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 space-y-5">
+      
+      <!-- Upload File PDF / TXT Box -->
+      <div>
+        <label class="block font-semibold text-slate-700 mb-2">📄 Unggah Dokumen (PDF / TXT):</label>
+        <div class="flex items-center gap-3">
+          <input type="file" id="pdfFileInput" accept=".pdf,.txt" class="hidden" onchange="handleFileUpload(event)">
+          <button onclick="document.getElementById('pdfFileInput').click()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-3 rounded-xl border border-slate-200 text-sm flex items-center gap-2 transition-all">
+            <span>📎</span>
+            <span>Pilih File PDF / TXT</span>
+          </button>
+          <span id="fileNameDisplay" class="text-xs text-slate-500 italic font-medium">Belum ada file dipilih</span>
+        </div>
+      </div>
+
+      <div class="relative flex py-1 items-center">
+        <div class="flex-grow border-t border-slate-200"></div>
+        <span class="flex-shrink mx-4 text-xs font-bold text-slate-400 uppercase">Atau Tempelkan Teks</span>
+        <div class="flex-grow border-t border-slate-200"></div>
+      </div>
+
+      <!-- Textarea Manual -->
+      <div>
+        <label class="block font-semibold text-slate-700 mb-2">Tempelkan Teks Materi Di Sini:</label>
+        <textarea id="materiInput" rows="5" class="w-full p-4 rounded-2xl bg-slate-50 border border-slate-200 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:bg-white transition-all duration-200" placeholder="Contoh: Manusia butuh tidur 7-8 jam sehari untuk menjaga memori otak dan imunitas tubuh..."></textarea>
+      </div>
+
+      <button id="btnGenerate" onclick="processPodcast()" class="w-full bg-violet-600 hover:bg-violet-700 active:scale-[0.99] text-white font-bold py-4 rounded-2xl shadow-lg shadow-violet-200 transition-all duration-200 flex items-center justify-center gap-2">
+        <span>🚀</span>
+        <span>Buat Podcast Interaktif & Kuis</span>
+      </button>
+    </div>
+
+    <!-- Status Loading Indikator Step -->
+    <div id="loadingStatus" class="hidden bg-white p-6 rounded-3xl border border-violet-100 text-center space-y-3 shadow-lg shadow-violet-100/50">
+      <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-violet-600 border-t-transparent"></div>
+      <p id="stepText" class="text-violet-700 font-bold text-lg animate-pulse">1/3 Sedang meracik naskah & kuis (Gemini AI)...</p>
+      <div class="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
+        <div id="progressBar" class="bg-violet-600 h-full w-1/3 transition-all duration-500"></div>
+      </div>
+    </div>
+
+    <!-- Output Result Container -->
+    <div id="resultContainer" class="hidden space-y-8">
+      
+      <!-- Interactive Segment Player & Tutor AI -->
+      <div class="bg-white p-6 md:p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 space-y-6">
+        <div class="flex items-center justify-between border-b border-slate-100 pb-4">
+          <div class="flex items-center gap-2 text-violet-700 font-bold">
+            <span>🎧</span>
+            <h2 class="text-lg">Player Interaktif Segmen</h2>
+          </div>
+          <span id="segmentIndicator" class="text-xs font-bold bg-violet-100 text-violet-700 px-3 py-1 rounded-full">Segmen 1 / -</span>
+        </div>
+
+        <!-- Audio Player per Segmen -->
+        <audio id="segmentAudioPlayer" class="w-full rounded-xl" controls></audio>
+
+        <!-- Controls: Prev, Play/Pause, Next & Speed -->
+        <div class="flex flex-wrap items-center justify-between gap-4">
+          <div class="flex items-center gap-2">
+            <button onclick="prevSegment()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-xl text-sm font-bold transition-all">⏮️ Prev</button>
+            <button id="btnPlayPauseSegment" onclick="togglePlayPauseSegment()" class="bg-violet-600 hover:bg-violet-700 text-white px-5 py-2 rounded-xl text-sm font-bold shadow-md shadow-violet-200 transition-all">▶️ Play</button>
+            <button onclick="nextSegment()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-xl text-sm font-bold transition-all">Next ⏭️</button>
+          </div>
+
+          <div class="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-bold text-slate-600">
+            <span>Kecepatan:</span>
+            <button onclick="setSpeed(1)" class="speed-btn px-2 py-1 rounded-lg bg-violet-600 text-white font-bold">1x</button>
+            <button onclick="setSpeed(1.25)" class="speed-btn px-2 py-1 rounded-lg hover:bg-slate-200 text-slate-600 font-normal">1.25x</button>
+            <button onclick="setSpeed(1.5)" class="speed-btn px-2 py-1 rounded-lg hover:bg-slate-200 text-slate-600 font-normal">1.5x</button>
+            <button onclick="setSpeed(2)" class="speed-btn px-2 py-1 rounded-lg hover:bg-slate-200 text-slate-600 font-normal">2x</button>
+          </div>
+        </div>
+
+        <!-- Fitur Tanya AI Tutor -->
+        <div class="bg-violet-50/70 p-5 rounded-2xl border border-violet-100 space-y-3">
+          <div class="flex items-center gap-2 text-violet-800 font-bold text-sm">
+            <span>💬</span>
+            <span>Tanya Tutor AI tentang Bagian Ini:</span>
+          </div>
+          <div class="flex gap-2">
+            <input type="text" id="questionInput" class="flex-1 p-3 rounded-xl border border-violet-200 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500" placeholder="Contoh: Kenapa konsep ini penting?">
+            <button id="btnAskQuestion" onclick="askTutorAI()" class="bg-violet-600 hover:bg-violet-700 text-white font-bold px-5 py-3 rounded-xl text-sm shadow-md transition-all flex items-center gap-1">
+              <span>Tanya</span>
+            </button>
+          </div>
+
+          <!-- Answer Result Box -->
+          <div id="tutorAnswerBox" class="hidden mt-3 p-4 bg-white rounded-xl border border-violet-200 space-y-1">
+            <span class="text-xs font-bold text-violet-600 uppercase tracking-wider">💡 Jawaban Tutor AI:</span>
+            <p id="tutorAnswerText" class="text-sm font-medium text-slate-700 leading-relaxed"></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Script Box -->
+      <div class="bg-white p-6 md:p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 space-y-4">
+        <div class="flex items-center gap-2 text-violet-700 font-bold mb-2">
+          <span>📜</span>
+          <h2 class="text-lg">Naskah Podcast Interaktif</h2>
+        </div>
+        <div id="scriptContainer" class="space-y-4"></div>
+      </div>
+
+      <!-- Download Full Audio Podcast (FFmpeg Existing Feature) -->
+      <div class="bg-white p-6 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 space-y-3">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2 text-slate-700 font-bold">
+            <span>💾</span>
+            <h2 class="text-md">Unduh Full Podcast (Single Audio)</h2>
+          </div>
+          <button id="btnDownloadFull" onclick="downloadFullPodcast()" class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all">
+            Unduh Full MP3
+          </button>
+        </div>
+      </div>
+
+      <!-- Quiz Box -->
+      <div class="bg-white p-6 md:p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 space-y-4">
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-2 text-violet-700 font-bold">
+            <span>📝</span>
+            <h2 class="text-lg">Kuis Evaluasi Interaktif</h2>
+          </div>
+          <span id="scoreBadge" class="hidden bg-violet-100 text-violet-700 font-bold px-3 py-1 rounded-full text-sm">
+            Skor: <span id="scoreValue">0</span>/<span id="totalQuestions">10</span>
+          </span>
+        </div>
+        <div id="quizContainer" class="space-y-6"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = 'http://localhost:5000';
+    let currentPodcastScript = [];
+    let currentAudioSegments = [];
+    let currentSegmentIndex = 0;
+    let currentQuizData = [];
+    let userAnswers = {};
+    let currentPlaybackRate = 1;
+
+    const segmentAudioPlayer = document.getElementById('segmentAudioPlayer');
+
+    // Pemanggilan 1: Event lagu selesai -> otomatis play segmen berikutnya
+    segmentAudioPlayer.addEventListener('ended', () => {
+      if (currentSegmentIndex < currentAudioSegments.length - 1) {
+        loadAndPlaySegment(currentSegmentIndex + 1);
+      } else {
+        document.getElementById('btnPlayPauseSegment').innerText = '▶️ Play';
+      }
+    });
+
+    async function handleFileUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      document.getElementById('fileNameDisplay').innerText = "📖 Membaca " + file.name + "...";
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const res = await fetch(`${API_BASE}/api/extract-file`, {
+          method: 'POST',
+          body: formData
+        });
+
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Gagal membaca file');
+
+        document.getElementById('materiInput').value = data.text;
+        document.getElementById('fileNameDisplay').innerText = "✅ Berhasil diekstrak: " + file.name;
+      } catch (err) {
+        alert('Error File: ' + err.message);
+        document.getElementById('fileNameDisplay').innerText = "❌ Gagal membaca file";
+      }
+    }
+
+    async function processPodcast() {
+      const text = document.getElementById('materiInput').value.trim();
+      if (!text) return alert('Isi materi dulu atau upload file PDF!');
+
+      const btn = document.getElementById('btnGenerate');
+      const loading = document.getElementById('loadingStatus');
+      const result = document.getElementById('resultContainer');
+      const stepText = document.getElementById('stepText');
+      const progressBar = document.getElementById('progressBar');
+
+      btn.disabled = true;
+      btn.classList.add('opacity-50', 'cursor-not-allowed');
+      loading.classList.remove('hidden');
+      result.classList.add('hidden');
+      document.getElementById('tutorAnswerBox').classList.add('hidden');
+
+      userAnswers = {};
+      document.getElementById('scoreBadge').classList.add('hidden');
+
+      try {
+        stepText.innerText = "1/3 Sedang meracik naskah & kuis (Gemini AI)...";
+        progressBar.style.width = "33%";
+
+        const scriptRes = await fetch(`${API_BASE}/api/generate-script`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text })
+        });
+        const scriptData = await scriptRes.json();
+
+        if (!scriptData.success) throw new Error(scriptData.error || 'Gagal generate naskah');
+
+        const { podcast_script, quiz } = scriptData.data;
+        currentPodcastScript = podcast_script;
+        currentQuizData = quiz;
+
+        renderScriptBox();
+        renderQuiz();
+
+        stepText.innerText = "2/3 Mengisi suara AI per segmen...";
+        progressBar.style.width = "75%";
+
+        const segRes = await fetch(`${API_BASE}/api/generate-audio-segments`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ podcast_script })
+        });
+        const segData = await segRes.json();
+
+        if (!segData.success) throw new Error(segData.error || 'Gagal generate segmen audio');
+
+        currentAudioSegments = segData.segments;
+
+        stepText.innerText = "3/3 Podcast interaktif siap diputar!";
+        progressBar.style.width = "100%";
+
+        result.classList.remove('hidden');
+
+        // Pemanggilan 2: Memuat segmen pertama tanpa auto-play paksa
+        loadAndPlaySegment(0, false);
+
+      } catch (err) {
+        alert('Error: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.classList.remove('opacity-50', 'cursor-not-allowed');
+        loading.classList.add('hidden');
+      }
+    }
+
+    // Pemanggilan 3: Dipasang di atribut onclick tiap bubble chat
+    function renderScriptBox() {
+      const scriptBox = document.getElementById('scriptContainer');
+      scriptBox.innerHTML = currentPodcastScript.map((item, idx) => `
+        <div id="script-bubble-${idx}" onclick="loadAndPlaySegment(${idx})" class="p-4 rounded-2xl cursor-pointer transition-all duration-200 ${item.speaker === 'Rian' ? 'bg-violet-50 text-violet-950 border border-violet-100 hover:border-violet-300' : 'bg-emerald-50 text-emerald-950 border border-emerald-100 hover:border-emerald-300'}">
+          <span class="font-bold text-xs uppercase tracking-wider ${item.speaker === 'Rian' ? 'text-violet-600' : 'text-emerald-600'}">${item.speaker} (${item.speaker === 'Rian' ? 'Host' : 'Expert'})</span>
+          <p class="mt-1 font-medium leading-relaxed">${item.text}</p>
+        </div>
+      `).join('');
+    }
+
+    // --- DEKLARASI FUNGSI UTAMA LOAD & PLAY SEGMENT ---
+    function loadAndPlaySegment(index, autoPlay = true) {
+      if (!currentAudioSegments || currentAudioSegments.length === 0) return;
+
+      currentSegmentIndex = index;
+      const targetSeg = currentAudioSegments[index];
+
+      // Highlight bubble naskah aktif
+      currentPodcastScript.forEach((_, idx) => {
+        const bubble = document.getElementById(`script-bubble-${idx}`);
+        if (bubble) {
+          if (idx === index) {
+            bubble.classList.add('ring-2', 'ring-violet-600', 'shadow-md');
+          } else {
+            bubble.classList.remove('ring-2', 'ring-violet-600', 'shadow-md');
+          }
+        }
+      });
+
+      document.getElementById('segmentIndicator').innerText = `Segmen ${index + 1} / ${currentAudioSegments.length}`;
+
+      segmentAudioPlayer.src = `${API_BASE}${targetSeg.audioUrl}`;
+      segmentAudioPlayer.playbackRate = currentPlaybackRate;
+
+      if (autoPlay) {
+        segmentAudioPlayer.play().then(() => {
+          document.getElementById('btnPlayPauseSegment').innerText = '⏸️ Pause';
+        }).catch(err => {
+          console.warn('⚠️ Autoplay diblokir browser:', err);
+          document.getElementById('btnPlayPauseSegment').innerText = '▶️ Play';
+        });
+      } else {
+        document.getElementById('btnPlayPauseSegment').innerText = '▶️ Play';
+      }
+    }
+
+    function togglePlayPauseSegment() {
+      if (segmentAudioPlayer.paused) {
+        segmentAudioPlayer.play().then(() => {
+          document.getElementById('btnPlayPauseSegment').innerText = '⏸️ Pause';
+        }).catch(err => {
+          console.warn('⚠️ Gagal play audio:', err);
+        });
+      } else {
+        segmentAudioPlayer.pause();
+        document.getElementById('btnPlayPauseSegment').innerText = '▶️ Play';
+      }
+    }
+
+    // Pemanggilan 4: Dipanggil tombol Prev & Next
+    function prevSegment() {
+      if (currentSegmentIndex > 0) {
+        loadAndPlaySegment(currentSegmentIndex - 1);
+      }
+    }
+
+    function nextSegment() {
+      if (currentSegmentIndex < currentAudioSegments.length - 1) {
+        loadAndPlaySegment(currentSegmentIndex + 1);
+      }
+    }
+
+    function setSpeed(speed) {
+      currentPlaybackRate = speed;
+      segmentAudioPlayer.playbackRate = speed;
+
+      document.querySelectorAll('.speed-btn').forEach(btn => {
+        if (parseFloat(btn.innerText) === speed) {
+          btn.className = "speed-btn px-2 py-1 rounded-lg bg-violet-600 text-white font-bold";
+        } else {
+          btn.className = "speed-btn px-2 py-1 rounded-lg hover:bg-slate-200 text-slate-600 font-normal";
+        }
+      });
+    }
+
+    async function askTutorAI() {
+      const qInput = document.getElementById('questionInput');
+      const question = qInput.value.trim();
+      const sourceMaterial = document.getElementById('materiInput').value.trim();
+
+      if (!question) return alert('Ketikkan pertanyaanmu terlebih dahulu!');
+
+      segmentAudioPlayer.pause();
+      document.getElementById('btnPlayPauseSegment').innerText = '▶️ Play';
+
+      const btnAsk = document.getElementById('btnAskQuestion');
+      const answerBox = document.getElementById('tutorAnswerBox');
+      const answerText = document.getElementById('tutorAnswerText');
+
+      btnAsk.disabled = true;
+      btnAsk.innerText = 'Memproses...';
+      answerBox.classList.remove('hidden');
+      answerText.innerText = '🤔 Tutor AI sedang berpikir...';
+
+      try {
+        const res = await fetch(`${API_BASE}/api/ask-question`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            question,
+            currentIndex: currentSegmentIndex,
+            podcastScript: currentPodcastScript,
+            sourceMaterial
+          })
+        });
+
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Gagal mendapatkan jawaban');
+
+        answerText.innerText = data.answer;
+        qInput.value = '';
+      } catch (err) {
+        answerText.innerText = '❌ Error: ' + err.message;
+      } finally {
+        btnAsk.disabled = false;
+        btnAsk.innerText = 'Tanya';
+      }
+    }
+
+    async function downloadFullPodcast() {
+      const btn = document.getElementById('btnDownloadFull');
+      btn.disabled = true;
+      btn.innerText = 'Menggabungkan Audio...';
+
+      try {
+        const res = await fetch(`${API_BASE}/api/generate-full-podcast`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ podcast_script: currentPodcastScript })
+        });
+
+        if (!res.ok) throw new Error('Gagal membuat full podcast MP3');
+
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `podlearn_full_${Date.now()}.mp3`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        alert('Error: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'Unduh Full MP3';
+      }
+    }
+
+    function renderQuiz() {
+      const quizBox = document.getElementById('quizContainer');
+      quizBox.innerHTML = currentQuizData.map((q, qIdx) => `
+        <div class="bg-slate-50 p-5 rounded-2xl border border-slate-200/60 space-y-3">
+          <p class="font-bold text-slate-800">${qIdx + 1}. ${q.question}</p>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+            ${q.options.map(opt => {
+              const optKey = opt.trim().charAt(0);
+              const isSelected = userAnswers[qIdx] === optKey;
+              const isCorrect = q.answer === optKey;
+              const hasAnswered = userAnswers[qIdx] !== undefined;
+
+              let btnStyle = "bg-white border-slate-200 text-slate-600 hover:border-violet-300";
+              
+              if (hasAnswered) {
+                if (isCorrect) {
+                  btnStyle = "bg-emerald-100 border-emerald-500 text-emerald-800 font-bold";
+                } else if (isSelected && !isCorrect) {
+                  btnStyle = "bg-rose-100 border-rose-500 text-rose-800 font-bold";
+                } else {
+                  btnStyle = "bg-slate-100 border-slate-200 text-slate-400 opacity-60";
+                }
+              }
+
+              return `
+                <button 
+                  onclick="selectAnswer(${qIdx}, '${optKey}')" 
+                  ${hasAnswered ? 'disabled' : ''} 
+                  class="p-3 rounded-xl border text-sm text-left font-medium transition-all duration-200 ${btnStyle}">
+                  ${opt}
+                </button>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function selectAnswer(qIdx, selectedKey) {
+      userAnswers[qIdx] = selectedKey;
+      renderQuiz();
+
+      if (Object.keys(userAnswers).length === currentQuizData.length) {
+        let correctCount = 0;
+        currentQuizData.forEach((q, idx) => {
+          if (userAnswers[idx] === q.answer) correctCount++;
+        });
+
+        document.getElementById('scoreValue').innerText = correctCount;
+        document.getElementById('totalQuestions').innerText = currentQuizData.length;
+        document.getElementById('scoreBadge').classList.remove('hidden');
+      }
+    }
+  </script>
+</body>
+</html>
