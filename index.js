@@ -17,6 +17,7 @@ const pdfParse = require('pdf-parse');
 // Single Source of Truth untuk Model Gemini
 const GEMINI_MODEL = 'gemini-3.6-flash';
 
+// Set path FFmpeg Static
 ffmpeg.setFfmpegPath(ffmpegInstaller);
 
 const app = express();
@@ -24,10 +25,15 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('.'));
 
-// Ensure temp-audio directory exists
+// Ensure temp-audio and uploads directories exist
 const tempAudioDir = path.join(process.cwd(), 'temp-audio');
+const uploadsDir = path.join(process.cwd(), 'uploads');
+
 if (!fs.existsSync(tempAudioDir)) {
   fs.mkdirSync(tempAudioDir, { recursive: true });
+}
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
 // Serve temporary audio files statically
@@ -266,7 +272,7 @@ app.post('/api/generate-audio-segments', async (req, res) => {
       });
 
       const uniqueFilename = `segment_${i}_${crypto.randomUUID()}.mp3`;
-      const absolutePath = path.join(tempAudioDir, uniqueFilename);
+      const absolutePath = path.resolve(tempAudioDir, uniqueFilename);
       const publicUrlPath = `/temp-audio/${uniqueFilename}`;
 
       await new Promise(r => setTimeout(r, 150));
@@ -294,8 +300,8 @@ app.post('/api/generate-audio-segments', async (req, res) => {
 // Endpoint 3: Generate & Merge Audio (Full Podcast Existing)
 app.post('/api/generate-full-podcast', async (req, res) => {
   const tempFiles = [];
-  const listFilePath = path.join(process.cwd(), `concat_list_${Date.now()}.txt`);
-  const outputPath = path.join(process.cwd(), `full_podcast_${Date.now()}.mp3`);
+  const listFilePath = path.resolve(process.cwd(), `concat_list_${Date.now()}.txt`);
+  const outputPath = path.resolve(process.cwd(), `full_podcast_${Date.now()}.mp3`);
 
   try {
     const { podcast_script } = req.body;
@@ -316,7 +322,7 @@ app.post('/api/generate-full-podcast', async (req, res) => {
         outputFormat: 'audio-24khz-48kbitrate-mono-mp3'
       });
 
-      const tempPath = path.join(process.cwd(), `temp_${i}_${Date.now()}.mp3`);
+      const tempPath = path.resolve(process.cwd(), `temp_${i}_${Date.now()}.mp3`);
 
       await new Promise(r => setTimeout(r, 150));
       await tts.ttsPromise(item.text, tempPath);
