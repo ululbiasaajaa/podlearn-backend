@@ -912,10 +912,15 @@
           <p class="quiz-question">${qIdx + 1}. ${q.question}</p>
           <div class="quiz-options">
             ${q.options.map(opt => {
-              const optKey = opt.trim().charAt(0);
-              const isSelected = userAnswers[qIdx] === optKey;
-              const isCorrect = q.answer === optKey;
+              // Normalisasi string (hapus spasi lebih & bikin lowercase biar akurat)
+              const cleanOpt = opt.trim().toLowerCase();
+              const cleanAns = q.answer.trim().toLowerCase();
+              const selectedOpt = userAnswers[qIdx] ? userAnswers[qIdx].trim().toLowerCase() : null;
               const hasAnswered = userAnswers[qIdx] !== undefined;
+              // Cek apakah opsi ini adalah jawaban yang benar dari Gemini
+              const isCorrect = cleanOpt === cleanAns || cleanAns.startsWith(cleanOpt.charAt(0));
+              const isSelected = selectedOpt === cleanOpt;
+              
 
               let stateClass = '';
               if (hasAnswered) {
@@ -926,7 +931,7 @@
 
               return `
                 <button
-                  onclick="selectAnswer(${qIdx}, '${optKey}')"
+                  onclick="selectAnswer(${qIdx}, '${opt.replace(/'/g, "\\'")}')"
                   ${hasAnswered ? 'disabled' : ''}
                   class="quiz-opt ${stateClass}">
                   ${opt}
@@ -938,14 +943,18 @@
       `).join('');
     }
 
-    function selectAnswer(qIdx, selectedKey) {
-      userAnswers[qIdx] = selectedKey;
+    function selectAnswer(qIdx, selectedOptionText) {
+      userAnswers[qIdx] = selectedOptionText;
       renderQuiz();
 
       if (Object.keys(userAnswers).length === currentQuizData.length) {
         let correctCount = 0;
         currentQuizData.forEach((q, idx) => {
-          if (userAnswers[idx] === q.answer) correctCount++;
+          const userAns = (userAnswers[idx] || '').trim().toLowerCase();
+          const actualAns = (q.answer || '').trim().toLowerCase();
+          if (userAns === actualAns || actualAns.startsWith(userAns.charAt(0))) {
+            correctCount++;
+          }  
         });
 
         document.getElementById('scoreValue').innerText = correctCount;
