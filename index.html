@@ -4,151 +4,606 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PodLearn - AI Podcast Generator</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --paper: #F1EEFB;
+      --surface: #FFFFFF;
+      --ink: #211A34;
+      --ink-soft: #6B6383;
+      --accent-primary: #FF5A5F;
+      --accent-secondary: #0EA5A5;
+      --accent-tertiary: #FFC53D;
+      --danger: #E5484D;
+      --tint-primary: #FFE8E9;
+      --tint-secondary: #DFF7F4;
+      --tint-tertiary: #FFF6DC;
+      --tint-danger: #FDE3E4;
+      --shadow: #211A34;
+      --radius-lg: 22px;
+      --radius-md: 16px;
+      --radius-sm: 10px;
+    }
+
+    [data-theme="dark"] {
+      --paper: #16121F;
+      --surface: #241D36;
+      --ink: #F1EEFB;
+      --ink-soft: #B8AFDB;
+      --accent-primary: #FF6B6B;
+      --accent-secondary: #2DD4C4;
+      --accent-tertiary: #FFD166;
+      --danger: #FF6B6B;
+      --tint-primary: #3A2030;
+      --tint-secondary: #123331;
+      --tint-tertiary: #3A3018;
+      --tint-danger: #3A1E20;
+      --shadow: #000000;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+      min-height: 100vh;
+      padding: 24px 16px 64px;
+      transition: background 0.25s ease, color 0.25s ease;
+    }
+
+    .display {
+      font-family: 'Space Grotesk', 'Plus Jakarta Sans', sans-serif;
+      font-weight: 700;
+    }
+
+    .shell {
+      max-width: 760px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* ---------- Header ---------- */
+    .site-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-mark {
+      width: 52px;
+      height: 52px;
+      border-radius: var(--radius-md);
+      background: var(--accent-primary);
+      border: 3px solid var(--ink);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      box-shadow: 4px 4px 0 var(--shadow);
+      flex-shrink: 0;
+    }
+
+    .brand-copy h1 {
+      margin: 0;
+      font-size: 1.75rem;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-copy p {
+      margin: 2px 0 0;
+      color: var(--ink-soft);
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+
+    .theme-toggle {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: 3px solid var(--ink);
+      background: var(--surface);
+      cursor: pointer;
+      font-size: 1.1rem;
+      box-shadow: 3px 3px 0 var(--shadow);
+      transition: transform 0.15s ease;
+      flex-shrink: 0;
+    }
+    .theme-toggle:active { transform: translate(3px, 3px); box-shadow: none; }
+
+    /* ---------- Equalizer signature element ---------- */
+    .eq {
+      display: inline-flex;
+      align-items: flex-end;
+      gap: 3px;
+      height: 14px;
+      color: currentColor;
+    }
+    .eq span {
+      width: 3px;
+      border-radius: 2px;
+      background: currentColor;
+      height: 30%;
+      display: block;
+    }
+    .is-playing .eq span,
+    .eq.always-on span {
+      animation: eqBounce 0.9s ease-in-out infinite;
+    }
+    .eq span:nth-child(1) { animation-delay: 0s; }
+    .eq span:nth-child(2) { animation-delay: 0.15s; }
+    .eq span:nth-child(3) { animation-delay: 0.3s; }
+    .eq span:nth-child(4) { animation-delay: 0.45s; }
+    @keyframes eqBounce {
+      0%, 100% { height: 25%; }
+      50% { height: 100%; }
+    }
+
+    /* ---------- Card base ---------- */
+    .card {
+      background: var(--surface);
+      border: 3px solid var(--ink);
+      border-radius: var(--radius-lg);
+      box-shadow: 6px 6px 0 var(--shadow);
+      padding: 24px;
+    }
+
+    .card-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 1.05rem;
+      margin: 0 0 16px;
+    }
+
+    /* ---------- Upload form ---------- */
+    .field-label {
+      display: block;
+      font-weight: 700;
+      margin-bottom: 8px;
+      font-size: 0.95rem;
+    }
+
+    .upload-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .file-name {
+      font-size: 0.8rem;
+      color: var(--ink-soft);
+      font-style: italic;
+      font-weight: 600;
+    }
+
+    textarea, input[type="text"] {
+      width: 100%;
+      padding: 14px;
+      border-radius: var(--radius-md);
+      border: 2px solid var(--ink-soft);
+      background: var(--paper);
+      color: var(--ink);
+      font-family: inherit;
+      font-size: 0.95rem;
+      resize: vertical;
+    }
+
+    textarea:focus-visible, input:focus-visible, button:focus-visible {
+      outline: 3px solid var(--accent-tertiary);
+      outline-offset: 2px;
+    }
+
+    .or-divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 18px 0;
+      color: var(--ink-soft);
+      font-size: 0.72rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .or-divider::before, .or-divider::after {
+      content: '';
+      flex: 1;
+      height: 2px;
+      background: var(--ink-soft);
+      opacity: 0.3;
+    }
+
+    /* ---------- Buttons ---------- */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 700;
+      font-size: 0.95rem;
+      padding: 13px 20px;
+      border-radius: var(--radius-md);
+      border: 3px solid var(--ink);
+      cursor: pointer;
+      box-shadow: 4px 4px 0 var(--shadow);
+      transition: transform 0.12s ease, box-shadow 0.12s ease;
+      background: var(--surface);
+      color: var(--ink);
+    }
+    .btn:active { transform: translate(4px, 4px); box-shadow: none; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .btn-primary { background: var(--accent-primary); color: #fff; }
+    .btn-secondary { background: var(--accent-secondary); color: #fff; }
+    .btn-block { width: 100%; }
+    .btn-sm { padding: 9px 14px; font-size: 0.8rem; border-width: 2px; box-shadow: 3px 3px 0 var(--shadow); }
+    .btn-ghost { background: var(--paper); }
+
+    .btn-circle {
+      border-radius: 50%;
+      width: 56px;
+      height: 56px;
+      padding: 0;
+      font-size: 1.3rem;
+    }
+
+    /* ---------- Loading ---------- */
+    .loading-card { text-align: center; }
+    .loading-card .eq {
+      height: 28px;
+      margin-bottom: 12px;
+      color: var(--accent-tertiary);
+    }
+    .loading-card .eq span { width: 5px; }
+    .step-text {
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 700;
+      color: var(--accent-primary);
+      margin: 0 0 14px;
+    }
+    .progress-track {
+      width: 100%;
+      height: 10px;
+      border-radius: 999px;
+      background: var(--paper);
+      border: 2px solid var(--ink);
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: var(--accent-tertiary);
+      width: 33%;
+      transition: width 0.4s ease;
+    }
+
+    /* ---------- Player card ---------- */
+    .player-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 2px dashed var(--ink-soft);
+      padding-bottom: 14px;
+      margin-bottom: 18px;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .segment-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 700;
+      font-size: 0.75rem;
+      background: var(--accent-tertiary);
+      color: var(--ink);
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: 2px solid var(--ink);
+    }
+    .segment-pill .eq { color: var(--ink); }
+
+    audio { width: 100%; margin-bottom: 16px; }
+
+    .player-controls {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .transport { display: flex; align-items: center; gap: 8px; }
+
+    .speed-group {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--paper);
+      border: 2px solid var(--ink);
+      border-radius: var(--radius-md);
+      padding: 4px;
+      font-size: 0.72rem;
+    }
+    .speed-group span { padding: 0 6px; color: var(--ink-soft); font-weight: 700; }
+    .speed-btn {
+      border: none;
+      background: transparent;
+      color: var(--ink-soft);
+      font-weight: 700;
+      padding: 6px 10px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.75rem;
+    }
+    .speed-btn.active { background: var(--ink); color: var(--surface); }
+
+    /* ---------- Tutor box ---------- */
+    .tutor-box {
+      background: var(--tint-secondary);
+      border: 2px solid var(--accent-secondary);
+      border-radius: var(--radius-md);
+      padding: 18px;
+      margin-top: 20px;
+    }
+    .tutor-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 800;
+      font-size: 0.9rem;
+      margin-bottom: 10px;
+      color: var(--accent-secondary);
+    }
+    .tutor-input-row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .tutor-input-row input { flex: 1; min-width: 160px; background: var(--surface); }
+
+    .answer-box {
+      display: none;
+      margin-top: 14px;
+      padding: 16px;
+      background: var(--surface);
+      border: 2px solid var(--accent-secondary);
+      border-radius: var(--radius-sm);
+    }
+    .answer-box.show { display: block; }
+    .answer-eyebrow {
+      font-size: 0.7rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--accent-secondary);
+    }
+    .answer-text { margin: 6px 0 0; font-size: 0.9rem; line-height: 1.6; }
+
+    /* ---------- Script bubbles ---------- */
+    .bubble {
+      position: relative;
+      padding: 14px 16px;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: box-shadow 0.15s ease, transform 0.1s ease;
+      border-left: 5px solid transparent;
+      margin-bottom: 12px;
+    }
+    .bubble:hover { transform: translateX(2px); }
+    .bubble:last-child { margin-bottom: 0; }
+    .bubble.rian { background: var(--tint-primary); border-color: var(--accent-primary); }
+    .bubble.maya { background: var(--tint-secondary); border-color: var(--accent-secondary); }
+    .bubble.active-speaking { box-shadow: 3px 3px 0 var(--shadow); }
+
+    .bubble-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 4px;
+    }
+    .bubble.rian .bubble-head { color: var(--accent-primary); }
+    .bubble.maya .bubble-head { color: var(--accent-secondary); }
+    .bubble p { margin: 0; font-weight: 500; line-height: 1.55; }
+    .bubble .eq { display: none; }
+    .bubble.is-playing .eq { display: inline-flex; }
+
+    /* ---------- Quiz ---------- */
+    .quiz-item {
+      background: var(--paper);
+      border: 2px solid var(--ink-soft);
+      border-radius: var(--radius-md);
+      padding: 18px;
+      margin-bottom: 16px;
+    }
+    .quiz-item:last-child { margin-bottom: 0; }
+    .quiz-question { font-weight: 700; margin: 0 0 12px; }
+    .quiz-options {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    @media (max-width: 520px) { .quiz-options { grid-template-columns: 1fr; } }
+
+    .quiz-opt {
+      text-align: left;
+      padding: 10px 12px;
+      border-radius: var(--radius-sm);
+      border: 2px solid var(--ink-soft);
+      background: var(--surface);
+      color: var(--ink);
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .quiz-opt:hover:not(:disabled) { border-color: var(--accent-secondary); }
+    .quiz-opt:disabled { cursor: default; }
+    .quiz-opt.correct { background: var(--tint-tertiary); border-color: var(--accent-tertiary); font-weight: 800; }
+    .quiz-opt.wrong { background: var(--tint-danger); border-color: var(--danger); font-weight: 800; }
+    .quiz-opt.faded { opacity: 0.45; }
+
+    .score-badge {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      background: var(--accent-tertiary);
+      color: var(--ink);
+      font-weight: 800;
+      padding: 6px 14px;
+      border-radius: 999px;
+      border: 2px solid var(--ink);
+      font-size: 0.85rem;
+    }
+    .score-badge.show { display: inline-flex; }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .hidden { display: none !important; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .eq span, .btn, .bubble, .theme-toggle { animation: none !important; transition: none !important; }
+    }
+  </style>
 </head>
-<body class="bg-amber-50/50 text-slate-800 min-h-screen p-6 md:p-12">
-  <div class="max-w-3xl mx-auto space-y-8">
-    
+<body>
+  <div class="shell">
+
     <!-- Header -->
-    <header class="text-center space-y-2">
-      <div class="inline-flex items-center justify-center p-3 bg-violet-100 text-violet-600 rounded-2xl mb-2">
-        <span class="text-3xl">🎙️</span>
+    <header class="site-header">
+      <div class="brand">
+        <div class="brand-mark">
+          <div class="eq always-on">
+            <span></span><span></span><span></span><span></span>
+          </div>
+        </div>
+        <div class="brand-copy">
+          <h1 class="display">PodLearn</h1>
+          <p>Ubah materi jadi podcast interaktif & kuis, otomatis</p>
+        </div>
       </div>
-      <h1 class="text-4xl font-black tracking-tight text-slate-900">PodLearn</h1>
-      <p class="text-slate-500 font-medium">Ubah materi naskah / dokumen PDF jadi podcast interaktif secara otomatis!</p>
+      <button class="theme-toggle" id="themeToggleBtn" onclick="toggleTheme()" aria-label="Ganti tema">🌙</button>
     </header>
 
-    <!-- Form Input & Upload PDF -->
-    <div class="bg-white p-6 md:p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 space-y-5">
-      
-      <!-- Upload File PDF / TXT Box -->
+    <!-- Form Input -->
+    <div class="card">
       <div>
-        <label class="block font-semibold text-slate-700 mb-2">📄 Unggah Dokumen (PDF / TXT):</label>
-        <div class="flex items-center gap-3">
+        <label class="field-label">📄 Unggah Dokumen (PDF / TXT)</label>
+        <div class="upload-row">
           <input type="file" id="pdfFileInput" accept=".pdf,.txt" class="hidden" onchange="handleFileUpload(event)">
-          <button onclick="document.getElementById('pdfFileInput').click()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-3 rounded-xl border border-slate-200 text-sm flex items-center gap-2 transition-all">
-            <span>📎</span>
-            <span>Pilih File PDF / TXT</span>
-          </button>
-          <span id="fileNameDisplay" class="text-xs text-slate-500 italic font-medium">Belum ada file dipilih</span>
+          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('pdfFileInput').click()">📎 Pilih File</button>
+          <span id="fileNameDisplay" class="file-name">Belum ada file dipilih</span>
         </div>
       </div>
 
-      <div class="relative flex py-1 items-center">
-        <div class="flex-grow border-t border-slate-200"></div>
-        <span class="flex-shrink mx-4 text-xs font-bold text-slate-400 uppercase">Atau Tempelkan Teks</span>
-        <div class="flex-grow border-t border-slate-200"></div>
-      </div>
+      <div class="or-divider">Atau tempelkan teks</div>
 
-      <!-- Textarea Manual -->
       <div>
-        <label class="block font-semibold text-slate-700 mb-2">Tempelkan Teks Materi Di Sini:</label>
-        <textarea id="materiInput" rows="5" class="w-full p-4 rounded-2xl bg-slate-50 border border-slate-200 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:bg-white transition-all duration-200" placeholder="Contoh: Manusia butuh tidur 7-8 jam sehari untuk menjaga memori otak dan imunitas tubuh..."></textarea>
+        <label class="field-label">Tempelkan Teks Materi</label>
+        <textarea id="materiInput" rows="5" placeholder="Contoh: Manusia butuh tidur 7-8 jam sehari untuk menjaga memori otak dan imunitas tubuh..."></textarea>
       </div>
 
-      <button id="btnGenerate" onclick="processPodcast()" class="w-full bg-violet-600 hover:bg-violet-700 active:scale-[0.99] text-white font-bold py-4 rounded-2xl shadow-lg shadow-violet-200 transition-all duration-200 flex items-center justify-center gap-2">
-        <span>🚀</span>
-        <span>Buat Podcast Interaktif & Kuis</span>
-      </button>
-    </div>
-
-    <!-- Status Loading Indikator Step -->
-    <div id="loadingStatus" class="hidden bg-white p-6 rounded-3xl border border-violet-100 text-center space-y-3 shadow-lg shadow-violet-100/50">
-      <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-violet-600 border-t-transparent"></div>
-      <p id="stepText" class="text-violet-700 font-bold text-lg animate-pulse">1/3 Sedang meracik naskah & kuis (Gemini AI)...</p>
-      <div class="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-        <div id="progressBar" class="bg-violet-600 h-full w-1/3 transition-all duration-500"></div>
+      <div style="margin-top: 18px;">
+        <button id="btnGenerate" onclick="processPodcast()" class="btn btn-primary btn-block">
+          🚀 Buat Podcast Interaktif & Kuis
+        </button>
       </div>
     </div>
 
-    <!-- Output Result Container -->
-    <div id="resultContainer" class="hidden space-y-8">
-      
-      <!-- Interactive Segment Player & Tutor AI -->
-      <div class="bg-white p-6 md:p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 space-y-6">
-        <div class="flex items-center justify-between border-b border-slate-100 pb-4">
-          <div class="flex items-center gap-2 text-violet-700 font-bold">
-            <span>🎧</span>
-            <h2 class="text-lg">Player Interaktif Segmen</h2>
-          </div>
-          <span id="segmentIndicator" class="text-xs font-bold bg-violet-100 text-violet-700 px-3 py-1 rounded-full">Segmen 1 / -</span>
-        </div>
+    <!-- Loading -->
+    <div id="loadingStatus" class="card loading-card hidden">
+      <div class="eq always-on"><span></span><span></span><span></span><span></span><span></span></div>
+      <p id="stepText" class="step-text">1/3 Sedang meracik naskah & kuis (Gemini AI)...</p>
+      <div class="progress-track"><div id="progressBar" class="progress-fill"></div></div>
+    </div>
 
-        <!-- Audio Player per Segmen -->
-        <audio id="segmentAudioPlayer" class="w-full rounded-xl" controls></audio>
+    <!-- Result -->
+    <div id="resultContainer" class="hidden" style="display: flex; flex-direction: column; gap: 24px;">
 
-        <!-- Controls: Prev, Play/Pause, Next & Speed -->
-        <div class="flex flex-wrap items-center justify-between gap-4">
-          <div class="flex items-center gap-2">
-            <button onclick="prevSegment()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-xl text-sm font-bold transition-all">⏮️ Prev</button>
-            <button id="btnPlayPauseSegment" onclick="togglePlayPauseSegment()" class="bg-violet-600 hover:bg-violet-700 text-white px-5 py-2 rounded-xl text-sm font-bold shadow-md shadow-violet-200 transition-all">▶️ Play</button>
-            <button onclick="nextSegment()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-xl text-sm font-bold transition-all">Next ⏭️</button>
-          </div>
-
-          <div class="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-bold text-slate-600">
-            <span>Kecepatan:</span>
-            <button onclick="setSpeed(1)" class="speed-btn px-2 py-1 rounded-lg bg-violet-600 text-white font-bold">1x</button>
-            <button onclick="setSpeed(1.25)" class="speed-btn px-2 py-1 rounded-lg hover:bg-slate-200 text-slate-600 font-normal">1.25x</button>
-            <button onclick="setSpeed(1.5)" class="speed-btn px-2 py-1 rounded-lg hover:bg-slate-200 text-slate-600 font-normal">1.5x</button>
-            <button onclick="setSpeed(2)" class="speed-btn px-2 py-1 rounded-lg hover:bg-slate-200 text-slate-600 font-normal">2x</button>
-          </div>
-        </div>
-
-        <!-- Fitur Tanya AI Tutor -->
-        <div class="bg-violet-50/70 p-5 rounded-2xl border border-violet-100 space-y-3">
-          <div class="flex items-center gap-2 text-violet-800 font-bold text-sm">
-            <span>💬</span>
-            <span>Tanya Tutor AI tentang Bagian Ini:</span>
-          </div>
-          <div class="flex gap-2">
-            <input type="text" id="questionInput" class="flex-1 p-3 rounded-xl border border-violet-200 bg-white text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500" placeholder="Contoh: Kenapa konsep ini penting?">
-            <button id="btnAskQuestion" onclick="askTutorAI()" class="bg-violet-600 hover:bg-violet-700 text-white font-bold px-5 py-3 rounded-xl text-sm shadow-md transition-all flex items-center gap-1">
-              <span>Tanya</span>
-            </button>
-          </div>
-
-          <!-- Answer Result Box -->
-          <div id="tutorAnswerBox" class="hidden mt-3 p-4 bg-white rounded-xl border border-violet-200 space-y-1">
-            <span class="text-xs font-bold text-violet-600 uppercase tracking-wider">💡 Jawaban Tutor AI:</span>
-            <p id="tutorAnswerText" class="text-sm font-medium text-slate-700 leading-relaxed"></p>
-          </div>
-        </div>
-      </div>
-
-      <!-- Script Box -->
-      <div class="bg-white p-6 md:p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 space-y-4">
-        <div class="flex items-center gap-2 text-violet-700 font-bold mb-2">
-          <span>📜</span>
-          <h2 class="text-lg">Naskah Podcast Interaktif</h2>
-        </div>
-        <div id="scriptContainer" class="space-y-4"></div>
-      </div>
-
-      <!-- Download Full Audio Podcast (FFmpeg Existing Feature) -->
-      <div class="bg-white p-6 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 space-y-3">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-2 text-slate-700 font-bold">
-            <span>💾</span>
-            <h2 class="text-md">Unduh Full Podcast (Single Audio)</h2>
-          </div>
-          <button id="btnDownloadFull" onclick="downloadFullPodcast()" class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all">
-            Unduh Full MP3
-          </button>
-        </div>
-      </div>
-
-      <!-- Quiz Box -->
-      <div class="bg-white p-6 md:p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 space-y-4">
-        <div class="flex items-center justify-between mb-2">
-          <div class="flex items-center gap-2 text-violet-700 font-bold">
-            <span>📝</span>
-            <h2 class="text-lg">Kuis Evaluasi Interaktif</h2>
-          </div>
-          <span id="scoreBadge" class="hidden bg-violet-100 text-violet-700 font-bold px-3 py-1 rounded-full text-sm">
-            Skor: <span id="scoreValue">0</span>/<span id="totalQuestions">10</span>
+      <!-- Player -->
+      <div class="card" id="playerCard">
+        <div class="player-header">
+          <div class="card-title" style="margin:0;">🎧 Player Interaktif</div>
+          <span id="segmentIndicator" class="segment-pill">
+            <span class="eq"><span></span><span></span><span></span><span></span></span>
+            Segmen 1 / -
           </span>
         </div>
-        <div id="quizContainer" class="space-y-6"></div>
+
+        <audio id="segmentAudioPlayer" controls></audio>
+
+        <div class="player-controls">
+          <div class="transport">
+            <button onclick="prevSegment()" class="btn btn-ghost btn-sm">⏮️ Prev</button>
+            <button id="btnPlayPauseSegment" onclick="togglePlayPauseSegment()" class="btn btn-primary btn-circle">▶️</button>
+            <button onclick="nextSegment()" class="btn btn-ghost btn-sm">Next ⏭️</button>
+          </div>
+          <div class="speed-group">
+            <span>Speed</span>
+            <button onclick="setSpeed(1)" class="speed-btn active">1x</button>
+            <button onclick="setSpeed(1.25)" class="speed-btn">1.25x</button>
+            <button onclick="setSpeed(1.5)" class="speed-btn">1.5x</button>
+            <button onclick="setSpeed(2)" class="speed-btn">2x</button>
+          </div>
+        </div>
+
+        <div class="tutor-box">
+          <div class="tutor-label">💬 Tanya Tutor AI tentang bagian ini</div>
+          <div class="tutor-input-row">
+            <input type="text" id="questionInput" placeholder="Contoh: Kenapa konsep ini penting?">
+            <button id="btnAskQuestion" onclick="askTutorAI()" class="btn btn-secondary btn-sm">Tanya</button>
+          </div>
+          <div id="tutorAnswerBox" class="answer-box">
+            <span class="answer-eyebrow">💡 Jawaban Tutor AI</span>
+            <p id="tutorAnswerText" class="answer-text"></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Script -->
+      <div class="card">
+        <div class="card-title">📜 Naskah Podcast Interaktif</div>
+        <div id="scriptContainer"></div>
+      </div>
+
+      <!-- Download -->
+      <div class="card" style="padding: 18px 24px;">
+        <div class="section-header" style="margin:0;">
+          <div class="card-title" style="margin:0; font-size: 0.95rem;">💾 Unduh Full Podcast (Single Audio)</div>
+          <button id="btnDownloadFull" onclick="downloadFullPodcast()" class="btn btn-ghost btn-sm">Unduh MP3</button>
+        </div>
+      </div>
+
+      <!-- Quiz -->
+      <div class="card">
+        <div class="section-header">
+          <div class="card-title" style="margin:0;">📝 Kuis Evaluasi Interaktif</div>
+          <span id="scoreBadge" class="score-badge">Skor: <span id="scoreValue">0</span>/<span id="totalQuestions">10</span></span>
+        </div>
+        <div id="quizContainer"></div>
       </div>
 
     </div>
@@ -165,12 +620,55 @@
 
     const segmentAudioPlayer = document.getElementById('segmentAudioPlayer');
 
-    // Pemanggilan 1: Event lagu selesai -> otomatis play segmen berikutnya
+    // ---------- Theme ----------
+    function initTheme() {
+      const saved = localStorage.getItem('podlearn-theme');
+      const btn = document.getElementById('themeToggleBtn');
+      if (saved === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        btn.textContent = '☀️';
+      } else {
+        btn.textContent = '🌙';
+      }
+    }
+
+    function toggleTheme() {
+      const btn = document.getElementById('themeToggleBtn');
+      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      if (isDark) {
+        document.documentElement.removeAttribute('data-theme');
+        localStorage.setItem('podlearn-theme', 'light');
+        btn.textContent = '🌙';
+      } else {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        localStorage.setItem('podlearn-theme', 'dark');
+        btn.textContent = '☀️';
+      }
+    }
+
+    initTheme();
+
+    // ---------- Playing-state indicator (equalizer di player + bubble aktif) ----------
+    function setPlayingState(isPlaying) {
+      const playerCard = document.getElementById('playerCard');
+      if (playerCard) playerCard.classList.toggle('is-playing', isPlaying);
+
+      const activeBubble = document.getElementById(`script-bubble-${currentSegmentIndex}`);
+      if (activeBubble) activeBubble.classList.toggle('is-playing', isPlaying);
+
+      const btn = document.getElementById('btnPlayPauseSegment');
+      if (btn) btn.innerHTML = isPlaying ? '⏸️' : '▶️';
+    }
+
+    segmentAudioPlayer.addEventListener('play', () => setPlayingState(true));
+    segmentAudioPlayer.addEventListener('pause', () => setPlayingState(false));
+
+    // Event lagu selesai -> otomatis play segmen berikutnya
     segmentAudioPlayer.addEventListener('ended', () => {
       if (currentSegmentIndex < currentAudioSegments.length - 1) {
         loadAndPlaySegment(currentSegmentIndex + 1);
       } else {
-        document.getElementById('btnPlayPauseSegment').innerText = '▶️ Play';
+        setPlayingState(false);
       }
     });
 
@@ -211,13 +709,12 @@
       const progressBar = document.getElementById('progressBar');
 
       btn.disabled = true;
-      btn.classList.add('opacity-50', 'cursor-not-allowed');
       loading.classList.remove('hidden');
       result.classList.add('hidden');
-      document.getElementById('tutorAnswerBox').classList.add('hidden');
+      document.getElementById('tutorAnswerBox').classList.remove('show');
 
       userAnswers = {};
-      document.getElementById('scoreBadge').classList.add('hidden');
+      document.getElementById('scoreBadge').classList.remove('show');
 
       try {
         stepText.innerText = "1/3 Sedang meracik naskah & kuis (Gemini AI)...";
@@ -258,89 +755,73 @@
 
         result.classList.remove('hidden');
 
-        // Pemanggilan 2: Memuat segmen pertama tanpa auto-play paksa
         loadAndPlaySegment(0, false);
 
       } catch (err) {
         alert('Error: ' + err.message);
       } finally {
         btn.disabled = false;
-        btn.classList.remove('opacity-50', 'cursor-not-allowed');
         loading.classList.add('hidden');
       }
     }
 
-    // Pemanggilan 3: Dipasang di atribut onclick tiap bubble chat
     function renderScriptBox() {
       const scriptBox = document.getElementById('scriptContainer');
-      scriptBox.innerHTML = currentPodcastScript.map((item, idx) => `
-        <div id="script-bubble-${idx}" onclick="loadAndPlaySegment(${idx})" class="p-4 rounded-2xl cursor-pointer transition-all duration-200 ${item.speaker === 'Rian' ? 'bg-violet-50 text-violet-950 border border-violet-100 hover:border-violet-300' : 'bg-emerald-50 text-emerald-950 border border-emerald-100 hover:border-emerald-300'}">
-          <span class="font-bold text-xs uppercase tracking-wider ${item.speaker === 'Rian' ? 'text-violet-600' : 'text-emerald-600'}">${item.speaker} (${item.speaker === 'Rian' ? 'Host' : 'Expert'})</span>
-          <p class="mt-1 font-medium leading-relaxed">${item.text}</p>
+      scriptBox.innerHTML = currentPodcastScript.map((item, idx) => {
+        const speakerClass = item.speaker === 'Rian' ? 'rian' : 'maya';
+        const roleLabel = item.speaker === 'Rian' ? 'Host' : 'Expert';
+        return `
+        <div id="script-bubble-${idx}" onclick="loadAndPlaySegment(${idx})" class="bubble ${speakerClass}">
+          <div class="bubble-head">
+            <span>${item.speaker} · ${roleLabel}</span>
+            <span class="eq"><span></span><span></span><span></span><span></span></span>
+          </div>
+          <p>${item.text}</p>
         </div>
-      `).join('');
+      `;
+      }).join('');
     }
 
-    // --- DEKLARASI FUNGSI UTAMA LOAD & PLAY SEGMENT ---
     function loadAndPlaySegment(index, autoPlay = true) {
       if (!currentAudioSegments || currentAudioSegments.length === 0) return;
+
+      // Bersihkan status "aktif" bubble sebelumnya
+      const prevBubble = document.getElementById(`script-bubble-${currentSegmentIndex}`);
+      if (prevBubble) prevBubble.classList.remove('active-speaking', 'is-playing');
 
       currentSegmentIndex = index;
       const targetSeg = currentAudioSegments[index];
 
-      // Highlight bubble naskah aktif
-      currentPodcastScript.forEach((_, idx) => {
-        const bubble = document.getElementById(`script-bubble-${idx}`);
-        if (bubble) {
-          if (idx === index) {
-            bubble.classList.add('ring-2', 'ring-violet-600', 'shadow-md');
-          } else {
-            bubble.classList.remove('ring-2', 'ring-violet-600', 'shadow-md');
-          }
-        }
-      });
+      const bubble = document.getElementById(`script-bubble-${index}`);
+      if (bubble) bubble.classList.add('active-speaking');
 
-      document.getElementById('segmentIndicator').innerText = `Segmen ${index + 1} / ${currentAudioSegments.length}`;
+      document.getElementById('segmentIndicator').innerHTML =
+        `<span class="eq"><span></span><span></span><span></span><span></span></span> Segmen ${index + 1} / ${currentAudioSegments.length}`;
 
       segmentAudioPlayer.src = `${API_BASE}${targetSeg.audioUrl}`;
       segmentAudioPlayer.playbackRate = currentPlaybackRate;
 
       if (autoPlay) {
-        segmentAudioPlayer.play().then(() => {
-          document.getElementById('btnPlayPauseSegment').innerText = '⏸️ Pause';
-        }).catch(err => {
+        segmentAudioPlayer.play().catch(err => {
           console.warn('⚠️ Autoplay diblokir browser:', err);
-          document.getElementById('btnPlayPauseSegment').innerText = '▶️ Play';
         });
-      } else {
-        document.getElementById('btnPlayPauseSegment').innerText = '▶️ Play';
       }
     }
 
     function togglePlayPauseSegment() {
       if (segmentAudioPlayer.paused) {
-        segmentAudioPlayer.play().then(() => {
-          document.getElementById('btnPlayPauseSegment').innerText = '⏸️ Pause';
-        }).catch(err => {
-          console.warn('⚠️ Gagal play audio:', err);
-        });
+        segmentAudioPlayer.play().catch(err => console.warn('⚠️ Gagal play audio:', err));
       } else {
         segmentAudioPlayer.pause();
-        document.getElementById('btnPlayPauseSegment').innerText = '▶️ Play';
       }
     }
 
-    // Pemanggilan 4: Dipanggil tombol Prev & Next
     function prevSegment() {
-      if (currentSegmentIndex > 0) {
-        loadAndPlaySegment(currentSegmentIndex - 1);
-      }
+      if (currentSegmentIndex > 0) loadAndPlaySegment(currentSegmentIndex - 1);
     }
 
     function nextSegment() {
-      if (currentSegmentIndex < currentAudioSegments.length - 1) {
-        loadAndPlaySegment(currentSegmentIndex + 1);
-      }
+      if (currentSegmentIndex < currentAudioSegments.length - 1) loadAndPlaySegment(currentSegmentIndex + 1);
     }
 
     function setSpeed(speed) {
@@ -348,11 +829,7 @@
       segmentAudioPlayer.playbackRate = speed;
 
       document.querySelectorAll('.speed-btn').forEach(btn => {
-        if (parseFloat(btn.innerText) === speed) {
-          btn.className = "speed-btn px-2 py-1 rounded-lg bg-violet-600 text-white font-bold";
-        } else {
-          btn.className = "speed-btn px-2 py-1 rounded-lg hover:bg-slate-200 text-slate-600 font-normal";
-        }
+        btn.classList.toggle('active', parseFloat(btn.innerText) === speed);
       });
     }
 
@@ -364,7 +841,6 @@
       if (!question) return alert('Ketikkan pertanyaanmu terlebih dahulu!');
 
       segmentAudioPlayer.pause();
-      document.getElementById('btnPlayPauseSegment').innerText = '▶️ Play';
 
       const btnAsk = document.getElementById('btnAskQuestion');
       const answerBox = document.getElementById('tutorAnswerBox');
@@ -372,7 +848,7 @@
 
       btnAsk.disabled = true;
       btnAsk.innerText = 'Memproses...';
-      answerBox.classList.remove('hidden');
+      answerBox.classList.add('show');
       answerText.innerText = '🤔 Tutor AI sedang berpikir...';
 
       try {
@@ -403,7 +879,7 @@
     async function downloadFullPodcast() {
       const btn = document.getElementById('btnDownloadFull');
       btn.disabled = true;
-      btn.innerText = 'Menggabungkan Audio...';
+      btn.innerText = 'Menggabungkan...';
 
       try {
         const res = await fetch(`${API_BASE}/api/generate-full-podcast`, {
@@ -425,39 +901,34 @@
         alert('Error: ' + err.message);
       } finally {
         btn.disabled = false;
-        btn.innerText = 'Unduh Full MP3';
+        btn.innerText = 'Unduh MP3';
       }
     }
 
     function renderQuiz() {
       const quizBox = document.getElementById('quizContainer');
       quizBox.innerHTML = currentQuizData.map((q, qIdx) => `
-        <div class="bg-slate-50 p-5 rounded-2xl border border-slate-200/60 space-y-3">
-          <p class="font-bold text-slate-800">${qIdx + 1}. ${q.question}</p>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+        <div class="quiz-item">
+          <p class="quiz-question">${qIdx + 1}. ${q.question}</p>
+          <div class="quiz-options">
             ${q.options.map(opt => {
               const optKey = opt.trim().charAt(0);
               const isSelected = userAnswers[qIdx] === optKey;
               const isCorrect = q.answer === optKey;
               const hasAnswered = userAnswers[qIdx] !== undefined;
 
-              let btnStyle = "bg-white border-slate-200 text-slate-600 hover:border-violet-300";
-              
+              let stateClass = '';
               if (hasAnswered) {
-                if (isCorrect) {
-                  btnStyle = "bg-emerald-100 border-emerald-500 text-emerald-800 font-bold";
-                } else if (isSelected && !isCorrect) {
-                  btnStyle = "bg-rose-100 border-rose-500 text-rose-800 font-bold";
-                } else {
-                  btnStyle = "bg-slate-100 border-slate-200 text-slate-400 opacity-60";
-                }
+                if (isCorrect) stateClass = 'correct';
+                else if (isSelected && !isCorrect) stateClass = 'wrong';
+                else stateClass = 'faded';
               }
 
               return `
-                <button 
-                  onclick="selectAnswer(${qIdx}, '${optKey}')" 
-                  ${hasAnswered ? 'disabled' : ''} 
-                  class="p-3 rounded-xl border text-sm text-left font-medium transition-all duration-200 ${btnStyle}">
+                <button
+                  onclick="selectAnswer(${qIdx}, '${optKey}')"
+                  ${hasAnswered ? 'disabled' : ''}
+                  class="quiz-opt ${stateClass}">
                   ${opt}
                 </button>
               `;
@@ -479,7 +950,7 @@
 
         document.getElementById('scoreValue').innerText = correctCount;
         document.getElementById('totalQuestions').innerText = currentQuizData.length;
-        document.getElementById('scoreBadge').classList.remove('hidden');
+        document.getElementById('scoreBadge').classList.add('show');
       }
     }
   </script>
