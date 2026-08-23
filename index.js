@@ -268,7 +268,8 @@ app.post('/api/generate-audio-segments', async (req, res) => {
       const tts = new EdgeTTS({
         voice: selectedVoice,
         lang: 'id-ID',
-        outputFormat: 'audio-24khz-48kbitrate-mono-mp3'
+        outputFormat: 'audio-24khz-48kbitrate-mono-mp3',
+        timeout: 30000 // dinaikkan dari default 10000ms -> 30 detik, karena latency Railway ke server Microsoft TTS lebih tinggi dari localhost
       });
 
       const uniqueFilename = `segment_${i}_${crypto.randomUUID()}.mp3`;
@@ -276,7 +277,14 @@ app.post('/api/generate-audio-segments', async (req, res) => {
       const publicUrlPath = `/temp-audio/${uniqueFilename}`;
 
       await new Promise(r => setTimeout(r, 150));
-      await tts.ttsPromise(item.text, absolutePath);
+
+      try {
+        await tts.ttsPromise(item.text, absolutePath);
+        console.log(`✅ [TTS Segments] Segmen ${i} (${item.speaker}) berhasil.`);
+      } catch (ttsError) {
+        console.error(`❌ [TTS Segments] Segmen ${i} (${item.speaker}) gagal:`, ttsError.message);
+        throw ttsError;
+      }
 
       segments.push({
         index: i,
@@ -319,13 +327,22 @@ app.post('/api/generate-full-podcast', async (req, res) => {
       const tts = new EdgeTTS({
         voice: selectedVoice,
         lang: 'id-ID',
-        outputFormat: 'audio-24khz-48kbitrate-mono-mp3'
+        outputFormat: 'audio-24khz-48kbitrate-mono-mp3',
+        timeout: 30000 // konsisten dengan endpoint segments
       });
 
       const tempPath = path.resolve(process.cwd(), `temp_${i}_${Date.now()}.mp3`);
 
       await new Promise(r => setTimeout(r, 150));
-      await tts.ttsPromise(item.text, tempPath);
+
+      try {
+        await tts.ttsPromise(item.text, tempPath);
+        console.log(`✅ [TTS Full] Segmen ${i} (${item.speaker}) berhasil.`);
+      } catch (ttsError) {
+        console.error(`❌ [TTS Full] Segmen ${i} (${item.speaker}) gagal:`, ttsError.message);
+        throw ttsError;
+      }
+
       tempFiles.push(tempPath);
     }
 
