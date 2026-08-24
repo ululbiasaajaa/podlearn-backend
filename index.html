@@ -703,6 +703,34 @@
       }
     }
 
+    // ---------- Database Helper (Step 3) ----------
+    async function savePodcastToDatabase(title, sourceText, script, segments, quiz) {
+      if (!currentUserSession || !currentUserSession.user) {
+        console.log('ℹ️ User belum login, skip simpan ke DB.');
+        return;
+      }
+
+      try {
+        const { data, error } = await supabaseClient
+          .from('podcasts')
+          .insert([
+            {
+              user_id: currentUserSession.user.id,
+              title: title || 'Podcast Tanpa Judul',
+              source_text: sourceText,
+              podcast_script: script,
+              audio_segments: segments,
+              quiz_data: quiz
+            }
+          ]);
+
+        if (error) throw error;
+        console.log('✅ Podcast berhasil disimpan ke database Supabase!');
+      } catch (err) {
+        console.error('❌ Gagal simpan podcast ke DB:', err.message);
+      }
+    }
+
     // Jalankan initAuth
     initAuth();
 
@@ -835,6 +863,15 @@
         if (!segData.success) throw new Error(segData.error || 'Gagal generate segmen audio');
 
         currentAudioSegments = segData.segments;
+
+        // 💾 Simpan otomatis ke Supabase jika user sedang ter-login (Step 3)
+        savePodcastToDatabase(
+          'Podcast ' + new Date().toLocaleDateString('id-ID'),
+          text,
+          currentPodcastScript,
+          currentAudioSegments,
+          currentQuizData
+        );
 
         stepText.innerText = "3/3 Podcast interaktif siap diputar!";
         progressBar.style.width = "100%";
