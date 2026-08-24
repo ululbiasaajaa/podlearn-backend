@@ -641,10 +641,7 @@
     const SUPABASE_ANON_KEY = 'sb_publishable_7Vtbl3pupXGiMy449x-clg_fMoHqKLx';
     const API_BASE = 'https://podlearn-backend-production.up.railway.app';
 
-    // PENTING: nama variable client-nya SENGAJA "supabaseClient", BUKAN "supabase" --
-    // karena CDN Supabase sudah mengisi window.supabase dengan objek SDK mentah
-    // (yang punya method .createClient). Kalau kita pakai nama "supabase" juga,
-    // akan bentrok/menutupi objek SDK itu dan bikin bug yang membingungkan.
+    // Buat client Supabase dengan nama variabel supabaseClient
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let currentUserSession = null;
