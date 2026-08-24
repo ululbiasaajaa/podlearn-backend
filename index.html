@@ -7,6 +7,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Supabase JS Client v2 -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
   <style>
     :root {
       --paper: #F1EEFB;
@@ -482,6 +486,13 @@
       gap: 10px;
     }
 
+    /* ---------- Auth User Row ---------- */
+    .auth-user-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
     .hidden { display: none !important; }
 
     @media (prefers-reduced-motion: reduce) {
@@ -505,7 +516,20 @@
           <p>Ubah materi jadi podcast interaktif & kuis, otomatis</p>
         </div>
       </div>
-      <button class="theme-toggle" id="themeToggleBtn" onclick="toggleTheme()" aria-label="Ganti tema">🌙</button>
+
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <!-- Container Auth State (Step 2) -->
+        <div id="authContainer">
+          <button id="btnLoginGoogle" onclick="loginWithGoogle()" class="btn btn-ghost btn-sm">
+            🔵 Login dengan Google
+          </button>
+          <div id="userInfo" class="auth-user-row hidden">
+            <span id="userEmailText" style="font-size: 0.8rem; font-weight: 700; color: var(--ink-soft);"></span>
+            <button onclick="logoutSupabase()" class="btn btn-ghost btn-sm">Logout</button>
+          </div>
+        </div>
+        <button class="theme-toggle" id="themeToggleBtn" onclick="toggleTheme()" aria-label="Ganti tema">🌙</button>
+      </div>
     </header>
 
     <!-- Form Input -->
@@ -610,7 +634,15 @@
   </div>
 
   <script>
+    // ============================================
+    // 🔒 SUPABASE CLIENT & CONFIG (STEP 2)
+    // ============================================
+    const SUPABASE_URL = 'https://egkrbtmszicrsavtrfta.supabase.co';
+    const SUPABASE_ANON_KEY = 'sb_publishable_7Vtbl3pupXGiMy449x-clg_fMoHqKLx';
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     const API_BASE = 'https://podlearn-backend-production.up.railway.app';
+    
+    let currentUserSession = null;
     let currentPodcastScript = [];
     let currentAudioSegments = [];
     let currentSegmentIndex = 0;
@@ -619,6 +651,58 @@
     let currentPlaybackRate = 1;
 
     const segmentAudioPlayer = document.getElementById('segmentAudioPlayer');
+
+    // ---------- Auth Handlers (Step 2) ----------
+    async function initAuth() {
+      const { data: { session } } = await supabase.auth.getSession();
+      updateAuthUI(session);
+
+      supabase.auth.onAuthStateChange((_event, session) => {
+        updateAuthUI(session);
+      });
+    }
+
+    function updateAuthUI(session) {
+      currentUserSession = session;
+      const btnLogin = document.getElementById('btnLoginGoogle');
+      const userInfo = document.getElementById('userInfo');
+      const userEmailText = document.getElementById('userEmailText');
+
+      if (session && session.user) {
+        if (btnLogin) btnLogin.classList.add('hidden');
+        if (userInfo) userInfo.classList.remove('hidden');
+        if (userEmailText) userEmailText.innerText = `👤 ${session.user.email}`;
+        console.log('✅ User Session Active:', session.user.id, session.user.email);
+      } else {
+        if (btnLogin) btnLogin.classList.remove('hidden');
+        if (userInfo) userInfo.classList.add('hidden');
+        if (userEmailText) userEmailText.innerText = '';
+        console.log('🔒 User Logged Out');
+      }
+    }
+
+    async function loginWithGoogle() {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin
+        }
+      });
+
+      if (error) {
+        alert('❌ Login Error: ' + error.message);
+      }
+    }
+
+    async function logoutSupabase() {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        alert('❌ Logout Error: ' + error.message);
+      }
+    }
+
+    // Jalankan initAuth
+    initAuth();
 
     // ---------- Theme ----------
     function initTheme() {
@@ -785,7 +869,6 @@
     function loadAndPlaySegment(index, autoPlay = true) {
       if (!currentAudioSegments || currentAudioSegments.length === 0) return;
 
-      // Bersihkan status "aktif" bubble sebelumnya
       const prevBubble = document.getElementById(`script-bubble-${currentSegmentIndex}`);
       if (prevBubble) prevBubble.classList.remove('active-speaking', 'is-playing');
 
@@ -905,29 +988,16 @@
       }
     }
 
-    // ---------- Quiz answer-matching (robust, letter-based + fallback text) ----------
-
-    // Ambil huruf kunci opsi (A/B/C/D). Kalau opsi diawali "A. ", "B) ", dll -> pakai itu.
-    // Kalau nggak ada prefix huruf sama sekali -> fallback ke posisi urutan opsi
-    // (opsi ke-0 = A, ke-1 = B, dst), supaya tetap unik & konsisten walau Gemini
-    // nggak nambahin prefix huruf di teks opsinya.
     function extractOptionKey(optText, idx) {
       const match = optText.trim().match(/^([A-Za-z])[.\)\-:]/);
       if (match) return match[1].toUpperCase();
       return String.fromCharCode(65 + idx);
     }
 
-    // Bersihkan prefix huruf ("A. ", "B) ", dst) dari sebuah teks, buat fallback
-    // perbandingan teks penuh.
     function stripLetterPrefix(str) {
       return str.trim().replace(/^([A-Za-z])[.\)\-:]\s*/, '').toLowerCase();
     }
 
-    // Cocokkan jawaban dari Gemini (q.answer) ke sebuah opsi tertentu.
-    // Lapis 1: kalau q.answer cuma berupa huruf (dengan/tanpa tanda baca, misal "B", "B.", "(B)")
-    //          -> bandingkan langsung ke optKey (huruf posisi opsi ini).
-    // Lapis 2: kalau q.answer ternyata teks penuh (bukan huruf tunggal)
-    //          -> bandingkan isi teksnya (setelah prefix huruf dibuang dari kedua sisi).
     function isAnswerMatch(q, optText, optKey) {
       const rawAns = (q.answer || '').trim();
       const letterOnly = rawAns.replace(/[^A-Za-z]/g, '');
