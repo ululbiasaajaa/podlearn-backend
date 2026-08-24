@@ -223,6 +223,11 @@ Ubah materi berikut menjadi naskah podcast percakapan 2 orang:
 
 Sertakan juga TEPAT 10 soal kuis pilihan ganda yang komprehensif berdasarkan materi tersebut.
 
+ATURAN FORMAT KUIS (WAJIB DIIKUTI PERSIS, JANGAN DILANGGAR):
+- Setiap soal harus punya TEPAT 4 opsi jawaban.
+- Setiap opsi WAJIB diawali huruf dan titik, contoh: "A. teks jawaban", "B. teks jawaban", "C. teks jawaban", "D. teks jawaban".
+- Field "answer" HANYA berisi SATU HURUF KAPITAL (A, B, C, atau D) yang sesuai opsi yang benar -- JANGAN sertakan teks jawaban di field ini, cukup hurufnya saja. Contoh benar: "B". Contoh salah: "B. Pengujian toksisitas...".
+
 Materi:
 ${text}
 `;

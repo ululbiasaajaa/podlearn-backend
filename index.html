@@ -905,22 +905,51 @@
       }
     }
 
+    // ---------- Quiz answer-matching (robust, letter-based + fallback text) ----------
+
+    // Ambil huruf kunci opsi (A/B/C/D). Kalau opsi diawali "A. ", "B) ", dll -> pakai itu.
+    // Kalau nggak ada prefix huruf sama sekali -> fallback ke posisi urutan opsi
+    // (opsi ke-0 = A, ke-1 = B, dst), supaya tetap unik & konsisten walau Gemini
+    // nggak nambahin prefix huruf di teks opsinya.
+    function extractOptionKey(optText, idx) {
+      const match = optText.trim().match(/^([A-Za-z])[.\)\-:]/);
+      if (match) return match[1].toUpperCase();
+      return String.fromCharCode(65 + idx);
+    }
+
+    // Bersihkan prefix huruf ("A. ", "B) ", dst) dari sebuah teks, buat fallback
+    // perbandingan teks penuh.
+    function stripLetterPrefix(str) {
+      return str.trim().replace(/^([A-Za-z])[.\)\-:]\s*/, '').toLowerCase();
+    }
+
+    // Cocokkan jawaban dari Gemini (q.answer) ke sebuah opsi tertentu.
+    // Lapis 1: kalau q.answer cuma berupa huruf (dengan/tanpa tanda baca, misal "B", "B.", "(B)")
+    //          -> bandingkan langsung ke optKey (huruf posisi opsi ini).
+    // Lapis 2: kalau q.answer ternyata teks penuh (bukan huruf tunggal)
+    //          -> bandingkan isi teksnya (setelah prefix huruf dibuang dari kedua sisi).
+    function isAnswerMatch(q, optText, optKey) {
+      const rawAns = (q.answer || '').trim();
+      const letterOnly = rawAns.replace(/[^A-Za-z]/g, '');
+
+      if (letterOnly.length === 1 && rawAns.length <= 3) {
+        return letterOnly.toUpperCase() === optKey;
+      }
+
+      return stripLetterPrefix(rawAns) === stripLetterPrefix(optText);
+    }
+
     function renderQuiz() {
       const quizBox = document.getElementById('quizContainer');
       quizBox.innerHTML = currentQuizData.map((q, qIdx) => `
         <div class="quiz-item">
           <p class="quiz-question">${qIdx + 1}. ${q.question}</p>
           <div class="quiz-options">
-            ${q.options.map(opt => {
-              // Normalisasi string (hapus spasi lebih & bikin lowercase biar akurat)
-              const cleanOpt = opt.trim().toLowerCase();
-              const cleanAns = q.answer.trim().toLowerCase();
-              const selectedOpt = userAnswers[qIdx] ? userAnswers[qIdx].trim().toLowerCase() : null;
+            ${q.options.map((opt, optIdx) => {
+              const optKey = extractOptionKey(opt, optIdx);
+              const isSelected = userAnswers[qIdx] === optKey;
+              const isCorrect = isAnswerMatch(q, opt, optKey);
               const hasAnswered = userAnswers[qIdx] !== undefined;
-              // Cek apakah opsi ini adalah jawaban yang benar dari Gemini
-              const isCorrect = cleanOpt === cleanAns || cleanAns.startsWith(cleanOpt.charAt(0));
-              const isSelected = selectedOpt === cleanOpt;
-              
 
               let stateClass = '';
               if (hasAnswered) {
@@ -931,7 +960,7 @@
 
               return `
                 <button
-                  onclick="selectAnswer(${qIdx}, '${opt.replace(/'/g, "\\'")}')"
+                  onclick="selectAnswer(${qIdx}, '${optKey}')"
                   ${hasAnswered ? 'disabled' : ''}
                   class="quiz-opt ${stateClass}">
                   ${opt}
@@ -943,18 +972,18 @@
       `).join('');
     }
 
-    function selectAnswer(qIdx, selectedOptionText) {
-      userAnswers[qIdx] = selectedOptionText;
+    function selectAnswer(qIdx, selectedKey) {
+      userAnswers[qIdx] = selectedKey;
       renderQuiz();
 
       if (Object.keys(userAnswers).length === currentQuizData.length) {
         let correctCount = 0;
         currentQuizData.forEach((q, idx) => {
-          const userAns = (userAnswers[idx] || '').trim().toLowerCase();
-          const actualAns = (q.answer || '').trim().toLowerCase();
-          if (userAns === actualAns || actualAns.startsWith(userAns.charAt(0))) {
+          const chosenKey = userAnswers[idx];
+          const chosenOptIdx = q.options.findIndex((opt, i) => extractOptionKey(opt, i) === chosenKey);
+          if (chosenOptIdx !== -1 && isAnswerMatch(q, q.options[chosenOptIdx], chosenKey)) {
             correctCount++;
-          }  
+          }
         });
 
         document.getElementById('scoreValue').innerText = correctCount;
