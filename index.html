@@ -640,7 +640,13 @@
     const SUPABASE_URL = 'https://egkrbtmszicrsavtrfta.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_7Vtbl3pupXGiMy449x-clg_fMoHqKLx';
     const API_BASE = 'https://podlearn-backend-production.up.railway.app';
-    
+
+    // PENTING: nama variable client-nya SENGAJA "supabaseClient", BUKAN "supabase" --
+    // karena CDN Supabase sudah mengisi window.supabase dengan objek SDK mentah
+    // (yang punya method .createClient). Kalau kita pakai nama "supabase" juga,
+    // akan bentrok/menutupi objek SDK itu dan bikin bug yang membingungkan.
+    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
     let currentUserSession = null;
     let currentPodcastScript = [];
     let currentAudioSegments = [];
@@ -653,10 +659,10 @@
 
     // ---------- Auth Handlers (Step 2) ----------
     async function initAuth() {
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session } } = await supabaseClient.auth.getSession();
       updateAuthUI(session);
 
-      supabase.auth.onAuthStateChange((_event, session) => {
+      supabaseClient.auth.onAuthStateChange((_event, session) => {
         updateAuthUI(session);
       });
     }
@@ -681,7 +687,7 @@
     }
 
     async function loginWithGoogle() {
-      const { error } = await supabase.auth.signInWithOAuth({
+      const { error } = await supabaseClient.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: window.location.origin
@@ -694,7 +700,7 @@
     }
 
     async function logoutSupabase() {
-      const { error } = await supabase.auth.signOut();
+      const { error } = await supabaseClient.auth.signOut();
       if (error) {
         alert('❌ Logout Error: ' + error.message);
       }
