@@ -853,10 +853,18 @@
         stepText.innerText = "2/3 Mengisi suara AI per segmen...";
         progressBar.style.width = "75%";
 
+        // Buat ID unik untuk folder podcast ini di Supabase Storage
+        const podcastId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'pod_' + Date.now();
+        const userId = currentUserSession && currentUserSession.user ? currentUserSession.user.id : null;
+
         const segRes = await fetch(`${API_BASE}/api/generate-audio-segments`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ podcast_script })
+          body: JSON.stringify({ 
+            podcast_script,
+            user_id: userId,
+            podcast_id: podcastId
+          })
         });
         const segData = await segRes.json();
 
@@ -920,7 +928,10 @@
       document.getElementById('segmentIndicator').innerHTML =
         `<span class="eq"><span></span><span></span><span></span><span></span></span> Segmen ${index + 1} / ${currentAudioSegments.length}`;
 
-      segmentAudioPlayer.src = `${API_BASE}${targetSeg.audioUrl}`;
+      // Cek apakah audioUrl berupa full HTTPS Storage URL atau path lokal temporary
+      const isFullUrl = targetSeg.audioUrl.startsWith('http://') || targetSeg.audioUrl.startsWith('https://');
+      segmentAudioPlayer.src = isFullUrl ? targetSeg.audioUrl : `${API_BASE}${targetSeg.audioUrl}`;
+
       segmentAudioPlayer.playbackRate = currentPlaybackRate;
 
       if (autoPlay) {

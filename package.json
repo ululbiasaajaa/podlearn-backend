@@ -14,6 +14,7 @@
     "@elevenlabs/elevenlabs-js": "^2.62.0",
     "@google/genai": "^2.16.0",
     "@google/generative-ai": "^0.24.1",
+    "@supabase/supabase-js": "^2.112.4",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",

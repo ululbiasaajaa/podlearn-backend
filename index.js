@@ -9,6 +9,7 @@ import ffmpeg from 'fluent-ffmpeg';
 import ffmpegInstaller from 'ffmpeg-static';
 import multer from 'multer';
 import crypto from 'crypto';
+import { createClient } from '@supabase/supabase-js';
 
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
@@ -24,6 +25,18 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.static('.'));
+
+// Server-side Supabase Client dengan Service Role Key untuk operasi Storage
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+let supabaseAdmin = null;
+if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+  supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  console.log('✅ [Supabase Admin] Server client terinisialisasi.');
+} else {
+  console.warn('⚠️ [Supabase Admin] SUPABASE_URL atau SUPABASE_SERVICE_ROLE_KEY belum di-set. Fallback ke temporary local storage.');
+}
 
 // Ensure temp-audio and uploads directories exist
 const tempAudioDir = path.join(process.cwd(), 'temp-audio');
@@ -145,7 +158,6 @@ async function callGeminiWithRetry(prompt, options = {}, retries) {
       if (isRateLimit) {
         rotateKey();
 
-        // Kalau udah muter 1 putaran penuh (semua key kena limit), baru wait
         if ((i + 1) % apiKeys.length === 0) {
           const waitTime = 15000 + (i * 2000);
           console.warn(`⚠️ [Gemini Rate Limit 429] Semua key kena limit dalam 1 putaran. Menunggu ${waitTime / 1000} detik... (Percobaan ${i + 1}/${maxRetries})`);
@@ -250,7 +262,7 @@ ${text}
 // Endpoint 2: Generate Audio Per Segment
 app.post('/api/generate-audio-segments', async (req, res) => {
   try {
-    const { podcast_script } = req.body;
+    const { podcast_script, user_id, podcast_id } = req.body;
 
     if (!podcast_script || !Array.isArray(podcast_script) || podcast_script.length === 0) {
       return res.status(400).json({ error: 'Array podcast_script wajib diisi!' });
@@ -258,6 +270,7 @@ app.post('/api/generate-audio-segments', async (req, res) => {
 
     console.log(`🎙️ [TTS Segments] Memulai pembuatan ${podcast_script.length} file audio segmen...`);
     const segments = [];
+    const generatedPodcastId = podcast_id || `pod_${Date.now()}`;
 
     for (let i = 0; i < podcast_script.length; i++) {
       const item = podcast_script[i];
@@ -274,27 +287,53 @@ app.post('/api/generate-audio-segments', async (req, res) => {
         voice: selectedVoice,
         lang: 'id-ID',
         outputFormat: 'audio-24khz-48kbitrate-mono-mp3',
-        timeout: 30000 // dinaikkan dari default 10000ms -> 30 detik, karena latency Railway ke server Microsoft TTS lebih tinggi dari localhost
+        timeout: 30000
       });
 
       const uniqueFilename = `segment_${i}_${crypto.randomUUID()}.mp3`;
       const absolutePath = path.resolve(tempAudioDir, uniqueFilename);
-      const publicUrlPath = `/temp-audio/${uniqueFilename}`;
+      let finalAudioUrl = `/temp-audio/${uniqueFilename}`;
 
       await new Promise(r => setTimeout(r, 150));
 
       try {
         await tts.ttsPromise(item.text, absolutePath);
-        console.log(`✅ [TTS Segments] Segmen ${i} (${item.speaker}) berhasil.`);
+        console.log(`✅ [TTS Segments] Local temp segmen ${i} (${item.speaker}) berhasil.`);
       } catch (ttsError) {
         console.error(`❌ [TTS Segments] Segmen ${i} (${item.speaker}) gagal:`, ttsError.message);
         throw ttsError;
       }
 
+      // Upload ke Supabase Storage jika ter-authenticated dan client tersedia
+      if (user_id && supabaseAdmin) {
+        const storagePath = `${user_id}/${generatedPodcastId}/segment_${i}.mp3`;
+        const fileBuffer = fs.readFileSync(absolutePath);
+
+        const { error: uploadError } = await supabaseAdmin.storage
+          .from('podcast-audio')
+          .upload(storagePath, fileBuffer, {
+            contentType: 'audio/mpeg',
+            upsert: true
+          });
+
+        if (uploadError) {
+          console.error(`❌ [Supabase Storage] Gagal upload segmen ${i}:`, uploadError.message);
+          throw new Error(`Gagal mengunggah audio ke Supabase Storage: ${uploadError.message}`);
+        }
+
+        // Gunakan Public URL Supabase Storage
+        const { data: publicUrlData } = supabaseAdmin.storage
+          .from('podcast-audio')
+          .getPublicUrl(storagePath);
+
+        finalAudioUrl = publicUrlData.publicUrl;
+        console.log(`☁️ [Supabase Storage] Segmen ${i} diunggah ke Storage: ${finalAudioUrl}`);
+      }
+
       segments.push({
         index: i,
         speaker: item.speaker,
-        audioUrl: publicUrlPath
+        audioUrl: finalAudioUrl
       });
     }
 
@@ -333,7 +372,7 @@ app.post('/api/generate-full-podcast', async (req, res) => {
         voice: selectedVoice,
         lang: 'id-ID',
         outputFormat: 'audio-24khz-48kbitrate-mono-mp3',
-        timeout: 30000 // konsisten dengan endpoint segments
+        timeout: 30000
       });
 
       const tempPath = path.resolve(process.cwd(), `temp_${i}_${Date.now()}.mp3`);
@@ -423,7 +462,6 @@ Aturan Jawaban:
 4. Berikan jawaban langsung dalam teks biasa tanpa format JSON.
 `;
 
-    // Menggunakan retry logic + key rotation, tanpa JSON Schema
     const response = await callGeminiWithRetry(prompt);
 
     const answerText = response.text ? response.text.trim() : 'Maaf, saya tidak dapat menjawab pertanyaan tersebut saat ini.';
