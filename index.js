@@ -477,6 +477,67 @@ Aturan Jawaban:
   }
 });
 
+// Endpoint 5: Hapus Podcast & Cleanup Supabase Storage
+app.post('/api/delete-podcast', async (req, res) => {
+  try {
+    const { podcast_id, user_id } = req.body;
+
+    if (!podcast_id || !user_id) {
+      return res.status(400).json({ success: false, error: 'podcast_id dan user_id wajib diisi' });
+    }
+
+    if (!supabaseAdmin) {
+      return res.status(500).json({ success: false, error: 'Supabase Admin Client belum terinisialisasi di server.' });
+    }
+
+    // 1. Ambil daftar file audio yang tersimpan di folder podcast-audio/{user_id}/{podcast_id}/
+    const folderPath = `${user_id}/${podcast_id}`;
+    const { data: filesList, error: listError } = await supabaseAdmin.storage
+      .from('podcast-audio')
+      .list(folderPath);
+
+    if (listError) {
+      console.error('⚠️ Gagal membaca folder storage:', listError.message);
+      return res.status(500).json({ success: false, error: 'Gagal memeriksa file di Storage: ' + listError.message });
+    }
+
+    // 2. Hapus seluruh file di folder Storage tersebut jika file ditemukan
+    if (filesList && filesList.length > 0) {
+      const filesToRemove = filesList.map(f => `${folderPath}/${f.name}`);
+      const { error: deleteStorageError } = await supabaseAdmin.storage
+        .from('podcast-audio')
+        .remove(filesToRemove);
+
+      if (deleteStorageError) {
+        console.error('❌ Gagal menghapus file dari Storage:', deleteStorageError.message);
+        return res.status(500).json({ 
+          success: false, 
+          error: 'Gagal membersihkan file audio dari Storage. Penghapusan dibatalkan demi konsistensi data.' 
+        });
+      }
+    }
+
+    // 3. Jika cleanup Storage berhasil, baru hapus row database dengan guard user_id & podcast_id
+    const { error: dbError } = await supabaseAdmin
+      .from('podcasts')
+      .delete()
+      .eq('id', podcast_id)
+      .eq('user_id', user_id);
+
+    if (dbError) {
+      console.error('❌ Gagal menghapus row database:', dbError.message);
+      return res.status(500).json({ success: false, error: 'Gagal menghapus data podcast dari database: ' + dbError.message });
+    }
+
+    console.log(`✅ Podcast ${podcast_id} milik user ${user_id} berhasil dihapus dari Storage & DB.`);
+    return res.json({ success: true, message: 'Podcast berhasil dihapus.' });
+
+  } catch (err) {
+    console.error('❌ Error pada /api/delete-podcast:', err.message);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`🚀 Server PodLearn berjalan di http://localhost:${PORT}`);

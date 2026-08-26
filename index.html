@@ -790,15 +790,22 @@
           statusBadge = `Segmen ${lastIdx + 1}/${totalSegs}`;
         }
 
+        const safeTitle = (pod.title || 'Podcast Tanpa Judul').replace(/'/g, "\\'");
+
         return `
           <div class="history-item">
             <div class="history-info">
               <h4>${pod.title || 'Podcast Tanpa Judul'}</h4>
               <span>📅 ${dateFormatted} · ${statusBadge}</span>
             </div>
-            <button onclick="openExistingPodcast('${pod.id}')" class="btn btn-secondary btn-sm">
-              ${btnText}
-            </button>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <button onclick="openExistingPodcast('${pod.id}')" class="btn btn-secondary btn-sm">
+                ${btnText}
+              </button>
+              <button onclick="deletePodcast('${pod.id}', '${safeTitle}')" class="btn btn-ghost btn-sm" style="color: var(--danger); border-color: var(--danger);" title="Hapus Podcast">
+                🗑️ Hapus
+              </button>
+            </div>
           </div>
         `;
       }).join('');
@@ -837,6 +844,47 @@
 
       loadAndPlaySegment(targetSegIndex, false);
       document.getElementById('playerCard').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    async function deletePodcast(podcastId, podcastTitle) {
+      if (!currentUserSession || !currentUserSession.user) {
+        return alert('Aksi ditolak: Anda harus login terlebih dahulu.');
+      }
+
+      const confirmDelete = confirm(`Apakah Anda yakin ingin menghapus "${podcastTitle}"?\nSemua file audio dan kuis terkait akan dihapus secara permanen.`);
+      if (!confirmDelete) return;
+
+      const userId = currentUserSession.user.id;
+
+      try {
+        const response = await fetch(`${API_BASE}/api/delete-podcast`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            podcast_id: podcastId,
+            user_id: userId
+          })
+        });
+
+        const result = await response.json();
+
+        if (!result.success) {
+          throw new Error(result.error || 'Gagal menghapus podcast.');
+        }
+
+        // Jika podcast yang sedang diputar dihapus, hentikan player & sembunyikan UI result
+        if (currentActivePodcastId === podcastId) {
+          currentActivePodcastId = null;
+          segmentAudioPlayer.pause();
+          document.getElementById('resultContainer').classList.add('hidden');
+        }
+
+        // Refresh riwayat tanpa reload halaman
+        await loadUserPodcasts();
+
+      } catch (err) {
+        alert('❌ Gagal Menghapus Podcast: ' + err.message);
+      }
     }
 
     async function savePlaybackProgress(segmentIndex) {
