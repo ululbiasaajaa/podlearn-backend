@@ -26,7 +26,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('.'));
 
-// Server-side Supabase Client dengan Fallback yang Aman
+// Server-side Supabase Client Config
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://egkrbtmszicrsavtrfta.supabase.co';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'sb_publishable_7Vtbl3pupXGiMy449x-clg_fMoHqKLx';
@@ -36,10 +36,9 @@ if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
   supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
   console.log('✅ [Supabase Admin] Server client terinisialisasi dengan Service Role Key.');
 } else {
-  console.warn('⚠️ [Supabase Admin] SUPABASE_SERVICE_ROLE_KEY belum di-set. Menggunakan Anon Client Fallback untuk operasi database & storage.');
+  console.warn('⚠️ [Supabase Admin] SUPABASE_SERVICE_ROLE_KEY belum di-set. Menggunakan Anon Client Fallback.');
 }
 
-// Client Fallback Pintar
 function getSupabaseClient() {
   if (supabaseAdmin) return supabaseAdmin;
   return createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -79,7 +78,7 @@ setInterval(() => {
   } catch (err) {
     console.error('❌ [Cleanup Error]:', err);
   }
-}, 10 * 60 * 1000); // 10 minutes interval
+}, 10 * 60 * 1000);
 
 const upload = multer({ dest: 'uploads/' });
 
@@ -108,14 +107,13 @@ function rotateKey() {
   console.warn(`🔄 [Key Rotation] Pindah ke API key index ${currentKeyIndex}`);
 }
 
-// Helper Function: Auto-Retry Pintar untuk Penanganan Rate Limit (429) + Key Rotation
 async function callGeminiWithRetry(prompt, options = {}, retries) {
   const { useSchema = false } = options;
-  const maxRetries = retries || apiKeys.length * 2; // default: muter 2x semua key
+  const maxRetries = retries || apiKeys.length * 2;
 
   for (let i = 0; i < maxRetries; i++) {
     try {
-      const client = getAiClient(); // ambil client sesuai key yang lagi aktif
+      const client = getAiClient();
 
       const config = useSchema ? {
         responseMimeType: 'application/json',
@@ -167,7 +165,7 @@ async function callGeminiWithRetry(prompt, options = {}, retries) {
 
         if ((i + 1) % apiKeys.length === 0) {
           const waitTime = 15000 + (i * 2000);
-          console.warn(`⚠️ [Gemini Rate Limit 429] Semua key kena limit dalam 1 putaran. Menunggu ${waitTime / 1000} detik... (Percobaan ${i + 1}/${maxRetries})`);
+          console.warn(`⚠️ [Gemini Rate Limit 429] Semua key kena limit. Menunggu ${waitTime / 1000} detik...`);
           await new Promise(r => setTimeout(r, waitTime));
         }
       } else {
@@ -179,7 +177,6 @@ async function callGeminiWithRetry(prompt, options = {}, retries) {
   throw new Error('Semua percobaan gagal setelah rotasi key + retry.');
 }
 
-// Helper Function: Filter podcast context based on active index
 function getContextForQuestion(podcastScript, currentIndex) {
   if (!Array.isArray(podcastScript) || podcastScript.length === 0) return [];
 
@@ -278,13 +275,12 @@ app.post('/api/generate-audio-segments', async (req, res) => {
     console.log(`🎙️ [TTS Segments] Memulai pembuatan ${podcast_script.length} file audio segmen...`);
     const segments = [];
     const generatedPodcastId = podcast_id || `pod_${Date.now()}`;
-    const supabaseClient = getSupabaseClient();
+    const clientToUse = getSupabaseClient();
 
     for (let i = 0; i < podcast_script.length; i++) {
       const item = podcast_script[i];
 
-      // Guard Speaker & Voice Selector
-      let selectedVoice = 'id-ID-ArdiNeural'; // Default Rian
+      let selectedVoice = 'id-ID-ArdiNeural';
       if (item.speaker === 'Maya') {
         selectedVoice = 'id-ID-GadisNeural';
       } else if (item.speaker !== 'Rian') {
@@ -312,30 +308,29 @@ app.post('/api/generate-audio-segments', async (req, res) => {
         throw ttsError;
       }
 
-      // Upload ke Supabase Storage jika ter-authenticated dan client tersedia
-      if (user_id && supabaseClient) {
-        const storagePath = `${user_id}/${generatedPodcastId}/segment_${i}.mp3`;
-        const fileBuffer = fs.readFileSync(absolutePath);
+      if (user_id && clientToUse) {
+        try {
+          const storagePath = `${user_id}/${generatedPodcastId}/segment_${i}.mp3`;
+          const fileBuffer = fs.readFileSync(absolutePath);
 
-        const { error: uploadError } = await supabaseClient.storage
-          .from('podcast-audio')
-          .upload(storagePath, fileBuffer, {
-            contentType: 'audio/mpeg',
-            upsert: true
-          });
+          const { error: uploadError } = await clientToUse.storage
+            .from('podcast-audio')
+            .upload(storagePath, fileBuffer, {
+              contentType: 'audio/mpeg',
+              upsert: true
+            });
 
-        if (uploadError) {
-          console.error(`❌ [Supabase Storage] Gagal upload segmen ${i}:`, uploadError.message);
-          throw new Error(`Gagal mengunggah audio ke Supabase Storage: ${uploadError.message}`);
+          if (!uploadError) {
+            const { data: publicUrlData } = clientToUse.storage
+              .from('podcast-audio')
+              .getPublicUrl(storagePath);
+
+            finalAudioUrl = publicUrlData.publicUrl;
+            console.log(`☁️ [Supabase Storage] Segmen ${i} diunggah ke Storage: ${finalAudioUrl}`);
+          }
+        } catch (stErr) {
+          console.warn('⚠️ Skip Supabase Upload (Local Fallback Dipakai):', stErr.message);
         }
-
-        // Gunakan Public URL Supabase Storage
-        const { data: publicUrlData } = supabaseClient.storage
-          .from('podcast-audio')
-          .getPublicUrl(storagePath);
-
-        finalAudioUrl = publicUrlData.publicUrl;
-        console.log(`☁️ [Supabase Storage] Segmen ${i} diunggah ke Storage: ${finalAudioUrl}`);
       }
 
       segments.push({
@@ -357,7 +352,7 @@ app.post('/api/generate-audio-segments', async (req, res) => {
   }
 });
 
-// Endpoint 3: Generate & Merge Audio (Full Podcast Existing)
+// Endpoint 3: Generate & Merge Audio
 app.post('/api/generate-full-podcast', async (req, res) => {
   const tempFiles = [];
   const listFilePath = path.resolve(process.cwd(), `concat_list_${Date.now()}.txt`);
@@ -437,7 +432,7 @@ app.post('/api/generate-full-podcast', async (req, res) => {
   }
 });
 
-// Endpoint 4: Ask Question (Tanya AI mengenai segmen aktif)
+// Endpoint 4: Ask Question
 app.post('/api/ask-question', async (req, res) => {
   try {
     const { question, currentIndex, podcastScript, sourceMaterial } = req.body;
@@ -485,7 +480,7 @@ Aturan Jawaban:
   }
 });
 
-// Endpoint 5: Hapus Podcast & Cleanup Supabase Storage
+// Endpoint 5: Hapus Podcast (Anti-Crash & Robust Deletion)
 app.post('/api/delete-podcast', async (req, res) => {
   try {
     const { podcast_id, user_id } = req.body;
@@ -494,47 +489,46 @@ app.post('/api/delete-podcast', async (req, res) => {
       return res.status(400).json({ success: false, error: 'podcast_id dan user_id wajib diisi' });
     }
 
-    const supabaseClient = getSupabaseClient();
-
-    // 1. Ambil daftar file audio yang tersimpan di folder podcast-audio/{user_id}/{podcast_id}/
+    const clientToUse = getSupabaseClient();
     const folderPath = `${user_id}/${podcast_id}`;
-    const { data: filesList, error: listError } = await supabaseClient.storage
-      .from('podcast-audio')
-      .list(folderPath);
 
-    if (listError) {
-      console.error('⚠️ Gagal membaca folder storage:', listError.message);
-    }
-
-    // 2. Hapus seluruh file di folder Storage tersebut jika file ditemukan
-    if (filesList && filesList.length > 0) {
-      const filesToRemove = filesList.map(f => `${folderPath}/${f.name}`);
-      const { error: deleteStorageError } = await supabaseClient.storage
+    // 1. Storage Cleanup (Isolated & Non-Blocking jika folder kosong/tidak ada)
+    try {
+      const { data: filesList } = await clientToUse.storage
         .from('podcast-audio')
-        .remove(filesToRemove);
+        .list(folderPath);
 
-      if (deleteStorageError) {
-        console.error('❌ Gagal menghapus file dari Storage:', deleteStorageError.message);
+      if (filesList && filesList.length > 0) {
+        const filesToRemove = filesList.map(f => `${folderPath}/${f.name}`);
+        await clientToUse.storage
+          .from('podcast-audio')
+          .remove(filesToRemove);
+        console.log(`🧹 Storage cleanup selesai untuk folder: ${folderPath}`);
       }
+    } catch (storageErr) {
+      console.warn('⚠️ Warning Cleanup Storage (Lanjut hapus DB):', storageErr.message);
     }
 
-    // 3. Hapus row database dengan guard user_id & podcast_id
-    const { error: dbError } = await supabaseClient
+    // 2. Database Row Deletion (Mandatory Task)
+    const { error: dbError } = await clientToUse
       .from('podcasts')
       .delete()
       .eq('id', podcast_id)
       .eq('user_id', user_id);
 
     if (dbError) {
-      console.error('❌ Gagal menghapus row database:', dbError.message);
-      return res.status(500).json({ success: false, error: 'Gagal menghapus data podcast dari database: ' + dbError.message });
+      console.error('❌ Gagal hapus DB row:', dbError.message);
+      return res.status(500).json({ 
+        success: false, 
+        error: `Gagal menghapus data podcast dari database: ${dbError.message}` 
+      });
     }
 
-    console.log(`✅ Podcast ${podcast_id} milik user ${user_id} berhasil dihapus dari Storage & DB.`);
+    console.log(`✅ Podcast ${podcast_id} milik user ${user_id} berhasil dihapus.`);
     return res.json({ success: true, message: 'Podcast berhasil dihapus.' });
 
   } catch (err) {
-    console.error('❌ Error pada /api/delete-podcast:', err.message);
+    console.error('❌ Fatal Error pada /api/delete-podcast:', err.message);
     return res.status(500).json({ success: false, error: err.message });
   }
 });
