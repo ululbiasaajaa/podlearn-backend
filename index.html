@@ -172,6 +172,29 @@
       margin: 0 0 16px;
     }
 
+    /* ---------- History List ---------- */
+    .history-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      background: var(--paper);
+      border: 2px solid var(--ink-soft);
+      border-radius: var(--radius-md);
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .history-info h4 {
+      margin: 0;
+      font-size: 0.95rem;
+      color: var(--ink);
+    }
+    .history-info span {
+      font-size: 0.75rem;
+      color: var(--ink-soft);
+      font-weight: 600;
+    }
+
     /* ---------- Upload form ---------- */
     .field-label {
       display: block;
@@ -518,7 +541,7 @@
       </div>
 
       <div style="display: flex; align-items: center; gap: 10px;">
-        <!-- Container Auth State (Step 2) -->
+        <!-- Container Auth State -->
         <div id="authContainer">
           <button id="btnLoginGoogle" onclick="loginWithGoogle()" class="btn btn-ghost btn-sm">
             🔵 Login dengan Google
@@ -531,6 +554,14 @@
         <button class="theme-toggle" id="themeToggleBtn" onclick="toggleTheme()" aria-label="Ganti tema">🌙</button>
       </div>
     </header>
+
+    <!-- Card Riwayat Podcast (Muncul jika user login dan ada riwayat) -->
+    <div id="historyCard" class="card hidden">
+      <div class="card-title">📚 Riwayat Podcast Saya</div>
+      <div id="historyListContainer" style="display: flex; flex-direction: column; gap: 10px;">
+        <!-- Item riwayat dirender secara dinamis -->
+      </div>
+    </div>
 
     <!-- Form Input -->
     <div class="card">
@@ -635,13 +666,12 @@
 
   <script>
     // ============================================
-    // 🔒 SUPABASE CLIENT & CONFIG (STEP 2)
+    // 🔒 SUPABASE CLIENT & CONFIG
     // ============================================
     const SUPABASE_URL = 'https://egkrbtmszicrsavtrfta.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_7Vtbl3pupXGiMy449x-clg_fMoHqKLx';
     const API_BASE = 'https://podlearn-backend-production.up.railway.app';
 
-    // Buat client Supabase dengan nama variabel supabaseClient
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let currentUserSession = null;
@@ -651,10 +681,11 @@
     let currentQuizData = [];
     let userAnswers = {};
     let currentPlaybackRate = 1;
+    let userPodcastsList = [];
 
     const segmentAudioPlayer = document.getElementById('segmentAudioPlayer');
 
-    // ---------- Auth Handlers (Step 2) ----------
+    // ---------- Auth Handlers ----------
     async function initAuth() {
       const { data: { session } } = await supabaseClient.auth.getSession();
       updateAuthUI(session);
@@ -669,16 +700,20 @@
       const btnLogin = document.getElementById('btnLoginGoogle');
       const userInfo = document.getElementById('userInfo');
       const userEmailText = document.getElementById('userEmailText');
+      const historyCard = document.getElementById('historyCard');
 
       if (session && session.user) {
         if (btnLogin) btnLogin.classList.add('hidden');
         if (userInfo) userInfo.classList.remove('hidden');
         if (userEmailText) userEmailText.innerText = `👤 ${session.user.email}`;
         console.log('✅ User Session Active:', session.user.id, session.user.email);
+        
+        loadUserPodcasts();
       } else {
         if (btnLogin) btnLogin.classList.remove('hidden');
         if (userInfo) userInfo.classList.add('hidden');
         if (userEmailText) userEmailText.innerText = '';
+        if (historyCard) historyCard.classList.add('hidden');
         console.log('🔒 User Logged Out');
       }
     }
@@ -703,7 +738,83 @@
       }
     }
 
-    // ---------- Database Helper (Step 3) ----------
+    // ---------- Database & History Helpers ----------
+    async function loadUserPodcasts() {
+      if (!currentUserSession || !currentUserSession.user) return;
+
+      try {
+        const { data, error } = await supabaseClient
+          .from('podcasts')
+          .select('id, title, created_at, podcast_script, audio_segments, quiz_data, source_text')
+          .eq('user_id', currentUserSession.user.id)
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        userPodcastsList = data || [];
+        renderPodcastHistory(userPodcastsList);
+      } catch (err) {
+        console.error('❌ Gagal memuat riwayat podcast:', err.message);
+      }
+    }
+
+    function renderPodcastHistory(podcasts) {
+      const historyCard = document.getElementById('historyCard');
+      const container = document.getElementById('historyListContainer');
+
+      if (!podcasts || podcasts.length === 0) {
+        historyCard.classList.add('hidden');
+        return;
+      }
+
+      historyCard.classList.remove('hidden');
+      container.innerHTML = podcasts.map((pod) => {
+        const dateFormatted = new Date(pod.created_at).toLocaleString('id-ID', {
+          dateStyle: 'medium',
+          timeStyle: 'short'
+        });
+
+        return `
+          <div class="history-item">
+            <div class="history-info">
+              <h4>${pod.title || 'Podcast Tanpa Judul'}</h4>
+              <span>📅 ${dateFormatted} · ${pod.audio_segments ? pod.audio_segments.length : 0} Segmen</span>
+            </div>
+            <button onclick="openExistingPodcast('${pod.id}')" class="btn btn-secondary btn-sm">
+              ▶️ Buka / Lanjutkan
+            </button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function openExistingPodcast(podcastId) {
+      const selectedPod = userPodcastsList.find(p => p.id === podcastId);
+      if (!selectedPod) return alert('Data podcast tidak ditemukan.');
+
+      // Restorasi state global tanpa re-generate
+      currentPodcastScript = selectedPod.podcast_script || [];
+      currentAudioSegments = selectedPod.audio_segments || [];
+      currentQuizData = selectedPod.quiz_data || [];
+      userAnswers = {};
+
+      if (selectedPod.source_text) {
+        document.getElementById('materiInput').value = selectedPod.source_text;
+      }
+
+      renderScriptBox();
+      renderQuiz();
+
+      document.getElementById('tutorAnswerBox').classList.remove('show');
+      document.getElementById('scoreBadge').classList.remove('show');
+
+      const resultContainer = document.getElementById('resultContainer');
+      resultContainer.classList.remove('hidden');
+
+      loadAndPlaySegment(0, false);
+      document.getElementById('playerCard').scrollIntoView({ behavior: 'smooth' });
+    }
+
     async function savePodcastToDatabase(title, sourceText, script, segments, quiz) {
       if (!currentUserSession || !currentUserSession.user) {
         console.log('ℹ️ User belum login, skip simpan ke DB.');
@@ -726,6 +837,7 @@
 
         if (error) throw error;
         console.log('✅ Podcast berhasil disimpan ke database Supabase!');
+        loadUserPodcasts();
       } catch (err) {
         console.error('❌ Gagal simpan podcast ke DB:', err.message);
       }
@@ -762,7 +874,7 @@
 
     initTheme();
 
-    // ---------- Playing-state indicator (equalizer di player + bubble aktif) ----------
+    // ---------- Playing-state indicator ----------
     function setPlayingState(isPlaying) {
       const playerCard = document.getElementById('playerCard');
       if (playerCard) playerCard.classList.toggle('is-playing', isPlaying);
@@ -777,7 +889,6 @@
     segmentAudioPlayer.addEventListener('play', () => setPlayingState(true));
     segmentAudioPlayer.addEventListener('pause', () => setPlayingState(false));
 
-    // Event lagu selesai -> otomatis play segmen berikutnya
     segmentAudioPlayer.addEventListener('ended', () => {
       if (currentSegmentIndex < currentAudioSegments.length - 1) {
         loadAndPlaySegment(currentSegmentIndex + 1);
@@ -853,7 +964,6 @@
         stepText.innerText = "2/3 Mengisi suara AI per segmen...";
         progressBar.style.width = "75%";
 
-        // Buat ID unik untuk folder podcast ini di Supabase Storage
         const podcastId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'pod_' + Date.now();
         const userId = currentUserSession && currentUserSession.user ? currentUserSession.user.id : null;
 
@@ -872,7 +982,6 @@
 
         currentAudioSegments = segData.segments;
 
-        // 💾 Simpan otomatis ke Supabase jika user sedang ter-login (Step 3)
         savePodcastToDatabase(
           'Podcast ' + new Date().toLocaleDateString('id-ID'),
           text,
@@ -928,7 +1037,6 @@
       document.getElementById('segmentIndicator').innerHTML =
         `<span class="eq"><span></span><span></span><span></span><span></span></span> Segmen ${index + 1} / ${currentAudioSegments.length}`;
 
-      // Cek apakah audioUrl berupa full HTTPS Storage URL atau path lokal temporary
       const isFullUrl = targetSeg.audioUrl.startsWith('http://') || targetSeg.audioUrl.startsWith('https://');
       segmentAudioPlayer.src = isFullUrl ? targetSeg.audioUrl : `${API_BASE}${targetSeg.audioUrl}`;
 
