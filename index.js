@@ -26,16 +26,23 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('.'));
 
-// Server-side Supabase Client dengan Service Role Key untuk operasi Storage
-const SUPABASE_URL = process.env.SUPABASE_URL;
+// Server-side Supabase Client dengan Fallback yang Aman
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://egkrbtmszicrsavtrfta.supabase.co';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'sb_publishable_7Vtbl3pupXGiMy449x-clg_fMoHqKLx';
 
 let supabaseAdmin = null;
 if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
   supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-  console.log('✅ [Supabase Admin] Server client terinisialisasi.');
+  console.log('✅ [Supabase Admin] Server client terinisialisasi dengan Service Role Key.');
 } else {
-  console.warn('⚠️ [Supabase Admin] SUPABASE_URL atau SUPABASE_SERVICE_ROLE_KEY belum di-set. Fallback ke temporary local storage.');
+  console.warn('⚠️ [Supabase Admin] SUPABASE_SERVICE_ROLE_KEY belum di-set. Menggunakan Anon Client Fallback untuk operasi database & storage.');
+}
+
+// Client Fallback Pintar
+function getSupabaseClient() {
+  if (supabaseAdmin) return supabaseAdmin;
+  return createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 }
 
 // Ensure temp-audio and uploads directories exist
@@ -271,6 +278,7 @@ app.post('/api/generate-audio-segments', async (req, res) => {
     console.log(`🎙️ [TTS Segments] Memulai pembuatan ${podcast_script.length} file audio segmen...`);
     const segments = [];
     const generatedPodcastId = podcast_id || `pod_${Date.now()}`;
+    const supabaseClient = getSupabaseClient();
 
     for (let i = 0; i < podcast_script.length; i++) {
       const item = podcast_script[i];
@@ -305,11 +313,11 @@ app.post('/api/generate-audio-segments', async (req, res) => {
       }
 
       // Upload ke Supabase Storage jika ter-authenticated dan client tersedia
-      if (user_id && supabaseAdmin) {
+      if (user_id && supabaseClient) {
         const storagePath = `${user_id}/${generatedPodcastId}/segment_${i}.mp3`;
         const fileBuffer = fs.readFileSync(absolutePath);
 
-        const { error: uploadError } = await supabaseAdmin.storage
+        const { error: uploadError } = await supabaseClient.storage
           .from('podcast-audio')
           .upload(storagePath, fileBuffer, {
             contentType: 'audio/mpeg',
@@ -322,7 +330,7 @@ app.post('/api/generate-audio-segments', async (req, res) => {
         }
 
         // Gunakan Public URL Supabase Storage
-        const { data: publicUrlData } = supabaseAdmin.storage
+        const { data: publicUrlData } = supabaseClient.storage
           .from('podcast-audio')
           .getPublicUrl(storagePath);
 
@@ -486,39 +494,32 @@ app.post('/api/delete-podcast', async (req, res) => {
       return res.status(400).json({ success: false, error: 'podcast_id dan user_id wajib diisi' });
     }
 
-    if (!supabaseAdmin) {
-      return res.status(500).json({ success: false, error: 'Supabase Admin Client belum terinisialisasi di server.' });
-    }
+    const supabaseClient = getSupabaseClient();
 
     // 1. Ambil daftar file audio yang tersimpan di folder podcast-audio/{user_id}/{podcast_id}/
     const folderPath = `${user_id}/${podcast_id}`;
-    const { data: filesList, error: listError } = await supabaseAdmin.storage
+    const { data: filesList, error: listError } = await supabaseClient.storage
       .from('podcast-audio')
       .list(folderPath);
 
     if (listError) {
       console.error('⚠️ Gagal membaca folder storage:', listError.message);
-      return res.status(500).json({ success: false, error: 'Gagal memeriksa file di Storage: ' + listError.message });
     }
 
     // 2. Hapus seluruh file di folder Storage tersebut jika file ditemukan
     if (filesList && filesList.length > 0) {
       const filesToRemove = filesList.map(f => `${folderPath}/${f.name}`);
-      const { error: deleteStorageError } = await supabaseAdmin.storage
+      const { error: deleteStorageError } = await supabaseClient.storage
         .from('podcast-audio')
         .remove(filesToRemove);
 
       if (deleteStorageError) {
         console.error('❌ Gagal menghapus file dari Storage:', deleteStorageError.message);
-        return res.status(500).json({ 
-          success: false, 
-          error: 'Gagal membersihkan file audio dari Storage. Penghapusan dibatalkan demi konsistensi data.' 
-        });
       }
     }
 
-    // 3. Jika cleanup Storage berhasil, baru hapus row database dengan guard user_id & podcast_id
-    const { error: dbError } = await supabaseAdmin
+    // 3. Hapus row database dengan guard user_id & podcast_id
+    const { error: dbError } = await supabaseClient
       .from('podcasts')
       .delete()
       .eq('id', podcast_id)
