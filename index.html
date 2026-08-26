@@ -846,33 +846,47 @@
       document.getElementById('playerCard').scrollIntoView({ behavior: 'smooth' });
     }
 
+    // ---------- FITUR HAPUS PODCAST (DIRECT CLIENT WITH USER AUTH) ----------
     async function deletePodcast(podcastId, podcastTitle) {
       if (!currentUserSession || !currentUserSession.user) {
         return alert('Aksi ditolak: Anda harus login terlebih dahulu.');
       }
 
-      const confirmDelete = confirm(`Apakah Anda yakin ingin menghapus "${podcastTitle}"?\nSemua file audio dan kuis terkait akan dihapus secara permanen.`);
+      const confirmDelete = confirm(`Apakah Anda yakin ingin menghapus "${podcastTitle}"?\nSemua data podcast ini akan dihapus.`);
       if (!confirmDelete) return;
 
       const userId = currentUserSession.user.id;
 
       try {
-        const response = await fetch(`${API_BASE}/api/delete-podcast`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            podcast_id: podcastId,
-            user_id: userId
-          })
-        });
+        // 1. Storage Cleanup (Isolated & Non-Blocking jika folder audio sudah tidak ada)
+        try {
+          const folderPath = `${userId}/${podcastId}`;
+          const { data: filesList } = await supabaseClient.storage
+            .from('podcast-audio')
+            .list(folderPath);
 
-        const result = await response.json();
-
-        if (!result.success) {
-          throw new Error(result.error || 'Gagal menghapus podcast.');
+          if (filesList && filesList.length > 0) {
+            const filesToRemove = filesList.map(f => `${folderPath}/${f.name}`);
+            await supabaseClient.storage
+              .from('podcast-audio')
+              .remove(filesToRemove);
+          }
+        } catch (stErr) {
+          console.warn('⚠️ Warning Cleanup Storage (Lanjut hapus DB):', stErr.message);
         }
 
-        // Jika podcast yang sedang diputar dihapus, hentikan player & sembunyikan UI result
+        // 2. Database Row Deletion (Memanfaatkan Sesi Token User Supabase)
+        const { error: dbError } = await supabaseClient
+          .from('podcasts')
+          .delete()
+          .eq('id', podcastId)
+          .eq('user_id', userId);
+
+        if (dbError) {
+          throw new Error(dbError.message);
+        }
+
+        // Jika podcast yang sedang diputar dihapus, hentikan player
         if (currentActivePodcastId === podcastId) {
           currentActivePodcastId = null;
           segmentAudioPlayer.pause();
