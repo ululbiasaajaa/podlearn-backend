@@ -675,6 +675,7 @@
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let currentUserSession = null;
+    let currentActivePodcastId = null;
     let currentPodcastScript = [];
     let currentAudioSegments = [];
     let currentSegmentIndex = 0;
@@ -738,14 +739,14 @@
       }
     }
 
-    // ---------- Database & History Helpers ----------
+    // ---------- Database & Progress Helpers ----------
     async function loadUserPodcasts() {
       if (!currentUserSession || !currentUserSession.user) return;
 
       try {
         const { data, error } = await supabaseClient
           .from('podcasts')
-          .select('id, title, created_at, podcast_script, audio_segments, quiz_data, source_text')
+          .select('id, title, created_at, podcast_script, audio_segments, quiz_data, source_text, last_segment_index, is_completed')
           .eq('user_id', currentUserSession.user.id)
           .order('created_at', { ascending: false });
 
@@ -774,14 +775,29 @@
           timeStyle: 'short'
         });
 
+        const totalSegs = pod.audio_segments ? pod.audio_segments.length : 0;
+        const lastIdx = pod.last_segment_index || 0;
+        const isCompleted = pod.is_completed || (lastIdx >= totalSegs - 1 && totalSegs > 0);
+
+        let btnText = '▶️ Mulai';
+        let statusBadge = `Segmen ${lastIdx + 1}/${totalSegs}`;
+
+        if (isCompleted) {
+          btnText = '🔄 Mulai Lagi';
+          statusBadge = '✅ Selesai';
+        } else if (lastIdx > 0) {
+          btnText = '▶️ Lanjutkan';
+          statusBadge = `Segmen ${lastIdx + 1}/${totalSegs}`;
+        }
+
         return `
           <div class="history-item">
             <div class="history-info">
               <h4>${pod.title || 'Podcast Tanpa Judul'}</h4>
-              <span>📅 ${dateFormatted} · ${pod.audio_segments ? pod.audio_segments.length : 0} Segmen</span>
+              <span>📅 ${dateFormatted} · ${statusBadge}</span>
             </div>
             <button onclick="openExistingPodcast('${pod.id}')" class="btn btn-secondary btn-sm">
-              ▶️ Buka / Lanjutkan
+              ${btnText}
             </button>
           </div>
         `;
@@ -792,7 +808,8 @@
       const selectedPod = userPodcastsList.find(p => p.id === podcastId);
       if (!selectedPod) return alert('Data podcast tidak ditemukan.');
 
-      // Restorasi state global tanpa re-generate
+      currentActivePodcastId = selectedPod.id;
+
       currentPodcastScript = selectedPod.podcast_script || [];
       currentAudioSegments = selectedPod.audio_segments || [];
       currentQuizData = selectedPod.quiz_data || [];
@@ -811,8 +828,44 @@
       const resultContainer = document.getElementById('resultContainer');
       resultContainer.classList.remove('hidden');
 
-      loadAndPlaySegment(0, false);
+      const totalSegs = currentAudioSegments.length;
+      let targetSegIndex = selectedPod.last_segment_index || 0;
+
+      if (selectedPod.is_completed || targetSegIndex >= totalSegs - 1) {
+        targetSegIndex = 0;
+      }
+
+      loadAndPlaySegment(targetSegIndex, false);
       document.getElementById('playerCard').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    async function savePlaybackProgress(segmentIndex) {
+      if (!currentActivePodcastId || !currentUserSession || !currentUserSession.user) return;
+
+      const totalSegments = currentAudioSegments.length;
+      const isCompleted = segmentIndex >= totalSegments - 1;
+
+      const localPod = userPodcastsList.find(p => p.id === currentActivePodcastId);
+      if (localPod) {
+        localPod.last_segment_index = segmentIndex;
+        localPod.is_completed = isCompleted;
+        renderPodcastHistory(userPodcastsList);
+      }
+
+      try {
+        const { error } = await supabaseClient
+          .from('podcasts')
+          .update({
+            last_segment_index: segmentIndex,
+            is_completed: isCompleted
+          })
+          .eq('id', currentActivePodcastId)
+          .eq('user_id', currentUserSession.user.id);
+
+        if (error) console.error('⚠️ Gagal update progress ke Supabase:', error.message);
+      } catch (err) {
+        console.error('⚠️ Error savePlaybackProgress:', err.message);
+      }
     }
 
     async function savePodcastToDatabase(title, sourceText, script, segments, quiz) {
@@ -831,11 +884,20 @@
               source_text: sourceText,
               podcast_script: script,
               audio_segments: segments,
-              quiz_data: quiz
+              quiz_data: quiz,
+              last_segment_index: 0,
+              is_completed: false
             }
-          ]);
+          ])
+          .select('id')
+          .single();
 
         if (error) throw error;
+
+        if (data && data.id) {
+          currentActivePodcastId = data.id;
+        }
+
         console.log('✅ Podcast berhasil disimpan ke database Supabase!');
         loadUserPodcasts();
       } catch (err) {
@@ -1041,6 +1103,9 @@
       segmentAudioPlayer.src = isFullUrl ? targetSeg.audioUrl : `${API_BASE}${targetSeg.audioUrl}`;
 
       segmentAudioPlayer.playbackRate = currentPlaybackRate;
+
+      // 💾 Simpan progress ke database
+      savePlaybackProgress(index);
 
       if (autoPlay) {
         segmentAudioPlayer.play().catch(err => {
