@@ -739,7 +739,7 @@
       }
     }
 
-    // ---------- Database & Progress Helpers ----------
+    // ---------- Database & History Helpers ----------
     async function loadUserPodcasts() {
       if (!currentUserSession || !currentUserSession.user) return;
 
@@ -777,9 +777,9 @@
 
         const totalSegs = pod.audio_segments ? pod.audio_segments.length : 0;
         const lastIdx = pod.last_segment_index || 0;
-        const isCompleted = pod.is_completed || (lastIdx >= totalSegs - 1 && totalSegs > 0);
+        const isCompleted = pod.is_completed || (lastIdx >= (totalSegs - 1) && totalSegs > 0);
 
-        let btnText = '▶️ Mulai';
+        let btnText = '▶️ Buka';
         let statusBadge = `Segmen ${lastIdx + 1}/${totalSegs}`;
 
         if (isCompleted) {
@@ -831,7 +831,7 @@
       const totalSegs = currentAudioSegments.length;
       let targetSegIndex = selectedPod.last_segment_index || 0;
 
-      if (selectedPod.is_completed || targetSegIndex >= totalSegs - 1) {
+      if (selectedPod.is_completed || targetSegIndex >= (totalSegs - 1)) {
         targetSegIndex = 0;
       }
 
@@ -843,7 +843,7 @@
       if (!currentActivePodcastId || !currentUserSession || !currentUserSession.user) return;
 
       const totalSegments = currentAudioSegments.length;
-      const isCompleted = segmentIndex >= totalSegments - 1;
+      const isCompleted = segmentIndex >= (totalSegments - 1) && totalSegments > 0;
 
       const localPod = userPodcastsList.find(p => p.id === currentActivePodcastId);
       if (localPod) {
@@ -1044,7 +1044,7 @@
 
         currentAudioSegments = segData.segments;
 
-        savePodcastToDatabase(
+        await savePodcastToDatabase(
           'Podcast ' + new Date().toLocaleDateString('id-ID'),
           text,
           currentPodcastScript,
@@ -1104,7 +1104,7 @@
 
       segmentAudioPlayer.playbackRate = currentPlaybackRate;
 
-      // 💾 Simpan progress ke database
+      // 💾 Otomatis simpan progress setiap kali segmen diputar/dipindah
       savePlaybackProgress(index);
 
       if (autoPlay) {
