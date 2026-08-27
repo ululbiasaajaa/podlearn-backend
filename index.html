@@ -715,8 +715,43 @@
         if (userInfo) userInfo.classList.add('hidden');
         if (userEmailText) userEmailText.innerText = '';
         if (historyCard) historyCard.classList.add('hidden');
-        console.log('🔒 User Logged Out');
+
+        // 🔒 Total state reset saat session kosong / logout
+        resetFullPlayerAndDataState();
+
+        console.log('🔒 User Logged Out & State Cleared');
       }
+    }
+
+    // 🔒 Helper Fungsi Pembersihan State Total
+    function resetFullPlayerAndDataState() {
+      if (segmentAudioPlayer) {
+        segmentAudioPlayer.pause();
+        segmentAudioPlayer.removeAttribute('src');
+        segmentAudioPlayer.load();
+      }
+
+      currentActivePodcastId = null;
+      currentPodcastScript = [];
+      currentAudioSegments = [];
+      currentSegmentIndex = 0;
+      currentQuizData = [];
+      userAnswers = {};
+      userPodcastsList = [];
+
+      const resultContainer = document.getElementById('resultContainer');
+      const historyListContainer = document.getElementById('historyListContainer');
+      const materiInput = document.getElementById('materiInput');
+      const fileNameDisplay = document.getElementById('fileNameDisplay');
+      const tutorAnswerBox = document.getElementById('tutorAnswerBox');
+      const scoreBadge = document.getElementById('scoreBadge');
+
+      if (resultContainer) resultContainer.classList.add('hidden');
+      if (historyListContainer) historyListContainer.innerHTML = '';
+      if (materiInput) materiInput.value = '';
+      if (fileNameDisplay) fileNameDisplay.innerText = 'Belum ada file dipilih';
+      if (tutorAnswerBox) tutorAnswerBox.classList.remove('show');
+      if (scoreBadge) scoreBadge.classList.remove('show');
     }
 
     async function loginWithGoogle() {
@@ -733,6 +768,9 @@
     }
 
     async function logoutSupabase() {
+      // Hentikan audio secara instan sebelum network call
+      if (segmentAudioPlayer) segmentAudioPlayer.pause();
+
       const { error } = await supabaseClient.auth.signOut();
       if (error) {
         alert('❌ Logout Error: ' + error.message);

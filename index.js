@@ -265,6 +265,8 @@ ${text}
 
 // Endpoint 2: Generate Audio Per Segment
 app.post('/api/generate-audio-segments', async (req, res) => {
+  const createdTempFiles = []; // Pelacak temp file terisolasi milik request ini saja
+
   try {
     const { podcast_script, user_id, podcast_id } = req.body;
 
@@ -302,6 +304,7 @@ app.post('/api/generate-audio-segments', async (req, res) => {
 
       try {
         await tts.ttsPromise(item.text, absolutePath);
+        createdTempFiles.push(absolutePath); // Tandai berkas lokal milik request ini
         console.log(`✅ [TTS Segments] Local temp segmen ${i} (${item.speaker}) berhasil.`);
       } catch (ttsError) {
         console.error(`❌ [TTS Segments] Segmen ${i} (${item.speaker}) gagal:`, ttsError.message);
@@ -327,6 +330,13 @@ app.post('/api/generate-audio-segments', async (req, res) => {
 
             finalAudioUrl = publicUrlData.publicUrl;
             console.log(`☁️ [Supabase Storage] Segmen ${i} diunggah ke Storage: ${finalAudioUrl}`);
+
+            // 🧹 Pembersihan Seketika: Hapus temp file lokal jika sudah berhasil terunggah
+            if (fs.existsSync(absolutePath)) {
+              fs.unlinkSync(absolutePath);
+              const idx = createdTempFiles.indexOf(absolutePath);
+              if (idx > -1) createdTempFiles.splice(idx, 1);
+            }
           }
         } catch (stErr) {
           console.warn('⚠️ Skip Supabase Upload (Local Fallback Dipakai):', stErr.message);
@@ -348,15 +358,30 @@ app.post('/api/generate-audio-segments', async (req, res) => {
 
   } catch (error) {
     console.error('❌ [Generate Audio Segments Error]:', error);
+    
+    // 🧹 Pembersihan Terisolasi: Hapus hanya temp file yang terdaftar di request ini
+    createdTempFiles.forEach(f => {
+      if (fs.existsSync(f)) {
+        try { fs.unlinkSync(f); } catch (e) {}
+      }
+    });
+
     res.status(500).json({ error: 'Gagal membuat segmen audio', details: error?.message || error });
   }
 });
 
-// Endpoint 3: Generate & Merge Audio
+// Endpoint 3: Generate & Merge Audio (Full Podcast Existing)
 app.post('/api/generate-full-podcast', async (req, res) => {
   const tempFiles = [];
-  const listFilePath = path.resolve(process.cwd(), `concat_list_${Date.now()}.txt`);
-  const outputPath = path.resolve(process.cwd(), `full_podcast_${Date.now()}.mp3`);
+  const reqId = crypto.randomUUID();
+  const listFilePath = path.resolve(process.cwd(), `concat_list_${reqId}.txt`);
+  const outputPath = path.resolve(process.cwd(), `full_podcast_${reqId}.mp3`);
+
+  const cleanAllTemp = () => {
+    tempFiles.forEach(f => { if (fs.existsSync(f)) try { fs.unlinkSync(f); } catch (e) {} });
+    if (fs.existsSync(listFilePath)) try { fs.unlinkSync(listFilePath); } catch (e) {}
+    if (fs.existsSync(outputPath)) try { fs.unlinkSync(outputPath); } catch (e) {}
+  };
 
   try {
     const { podcast_script } = req.body;
@@ -378,19 +403,19 @@ app.post('/api/generate-full-podcast', async (req, res) => {
         timeout: 30000
       });
 
-      const tempPath = path.resolve(process.cwd(), `temp_${i}_${Date.now()}.mp3`);
+      // 🔒 UUID Collision-Safe Naming
+      const tempPath = path.resolve(process.cwd(), `temp_${i}_${crypto.randomUUID()}.mp3`);
 
       await new Promise(r => setTimeout(r, 150));
 
       try {
         await tts.ttsPromise(item.text, tempPath);
+        tempFiles.push(tempPath);
         console.log(`✅ [TTS Full] Segmen ${i} (${item.speaker}) berhasil.`);
       } catch (ttsError) {
         console.error(`❌ [TTS Full] Segmen ${i} (${item.speaker}) gagal:`, ttsError.message);
         throw ttsError;
       }
-
-      tempFiles.push(tempPath);
     }
 
     const fileListContent = tempFiles
@@ -409,25 +434,19 @@ app.post('/api/generate-full-podcast', async (req, res) => {
       .on('end', () => {
         console.log('✅ [FFmpeg] Penggabungan Selesai!');
         res.sendFile(outputPath, () => {
-          tempFiles.forEach(f => fs.existsSync(f) && fs.unlinkSync(f));
-          if (fs.existsSync(listFilePath)) fs.unlinkSync(listFilePath);
-          if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+          cleanAllTemp();
         });
       })
       .on('error', (err) => {
         console.error('❌ [FFmpeg Error]:', err);
-        tempFiles.forEach(f => fs.existsSync(f) && fs.unlinkSync(f));
-        if (fs.existsSync(listFilePath)) fs.unlinkSync(listFilePath);
-        if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+        cleanAllTemp();
         res.status(500).json({ error: 'Gagal menggabungkan audio podcast', details: err.message });
       })
       .run();
 
   } catch (error) {
     console.error('❌ [Full Podcast Error]:', error);
-    tempFiles.forEach(f => fs.existsSync(f) && fs.unlinkSync(f));
-    if (fs.existsSync(listFilePath)) fs.unlinkSync(listFilePath);
-    if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+    cleanAllTemp();
     res.status(500).json({ error: 'Gagal memproses full podcast', details: error.message });
   }
 });
