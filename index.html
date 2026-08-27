@@ -686,6 +686,18 @@
 
     const segmentAudioPlayer = document.getElementById('segmentAudioPlayer');
 
+    // ---------- Auth Headers Helper ----------
+    async function getAuthHeaders() {
+      const { data: { session } } = await supabaseClient.auth.getSession();
+      if (!session || !session.access_token) {
+        throw new Error('Sesi autentikasi telah berakhir. Silakan login terlebih dahulu.');
+      }
+      return {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`
+      };
+    }
+
     // ---------- Auth Handlers ----------
     async function initAuth() {
       const { data: { session } } = await supabaseClient.auth.getSession();
@@ -884,7 +896,7 @@
       document.getElementById('playerCard').scrollIntoView({ behavior: 'smooth' });
     }
 
-    // ---------- FITUR HAPUS PODCAST (DIRECT CLIENT WITH USER AUTH) ----------
+    // ---------- FITUR HAPUS PODCAST (VIA EXPRSS BEARER AUTH) ----------
     async function deletePodcast(podcastId, podcastTitle) {
       if (!currentUserSession || !currentUserSession.user) {
         return alert('Aksi ditolak: Anda harus login terlebih dahulu.');
@@ -893,36 +905,19 @@
       const confirmDelete = confirm(`Apakah Anda yakin ingin menghapus "${podcastTitle}"?\nSemua data podcast ini akan dihapus.`);
       if (!confirmDelete) return;
 
-      const userId = currentUserSession.user.id;
-
       try {
-        // 1. Storage Cleanup (Isolated & Non-Blocking jika folder audio sudah tidak ada)
-        try {
-          const folderPath = `${userId}/${podcastId}`;
-          const { data: filesList } = await supabaseClient.storage
-            .from('podcast-audio')
-            .list(folderPath);
+        const headers = await getAuthHeaders();
 
-          if (filesList && filesList.length > 0) {
-            const filesToRemove = filesList.map(f => `${folderPath}/${f.name}`);
-            await supabaseClient.storage
-              .from('podcast-audio')
-              .remove(filesToRemove);
-          }
-        } catch (stErr) {
-          console.warn('⚠️ Warning Cleanup Storage (Lanjut hapus DB):', stErr.message);
-        }
+        const res = await fetch(`${API_BASE}/api/delete-podcast`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            podcast_id: podcastId
+          })
+        });
 
-        // 2. Database Row Deletion (Memanfaatkan Sesi Token User Supabase)
-        const { error: dbError } = await supabaseClient
-          .from('podcasts')
-          .delete()
-          .eq('id', podcastId)
-          .eq('user_id', userId);
-
-        if (dbError) {
-          throw new Error(dbError.message);
-        }
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Gagal menghapus podcast');
 
         // Jika podcast yang sedang diputar dihapus, hentikan player
         if (currentActivePodcastId === podcastId) {
@@ -1069,8 +1064,15 @@
       formData.append('file', file);
 
       try {
+        const headers = {};
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (session && session.access_token) {
+          headers['Authorization'] = `Bearer ${session.access_token}`;
+        }
+
         const res = await fetch(`${API_BASE}/api/extract-file`, {
           method: 'POST',
+          headers,
           body: formData
         });
 
@@ -1104,12 +1106,14 @@
       document.getElementById('scoreBadge').classList.remove('show');
 
       try {
+        const headers = await getAuthHeaders();
+
         stepText.innerText = "1/3 Sedang meracik naskah & kuis (Gemini AI)...";
         progressBar.style.width = "33%";
 
         const scriptRes = await fetch(`${API_BASE}/api/generate-script`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({ text })
         });
         const scriptData = await scriptRes.json();
@@ -1127,14 +1131,12 @@
         progressBar.style.width = "75%";
 
         const podcastId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'pod_' + Date.now();
-        const userId = currentUserSession && currentUserSession.user ? currentUserSession.user.id : null;
 
         const segRes = await fetch(`${API_BASE}/api/generate-audio-segments`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({ 
             podcast_script,
-            user_id: userId,
             podcast_id: podcastId
           })
         });
@@ -1258,9 +1260,11 @@
       answerText.innerText = '🤔 Tutor AI sedang berpikir...';
 
       try {
+        const headers = await getAuthHeaders();
+
         const res = await fetch(`${API_BASE}/api/ask-question`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({
             question,
             currentIndex: currentSegmentIndex,
@@ -1288,9 +1292,11 @@
       btn.innerText = 'Menggabungkan...';
 
       try {
+        const headers = await getAuthHeaders();
+
         const res = await fetch(`${API_BASE}/api/generate-full-podcast`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({ podcast_script: currentPodcastScript })
         });
 

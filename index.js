@@ -26,22 +26,70 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('.'));
 
-// Server-side Supabase Client Config
+// ============================================================
+// 🔒 SUPABASE CONFIG & CLIENTS
+// ============================================================
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://egkrbtmszicrsavtrfta.supabase.co';
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'sb_publishable_7Vtbl3pupXGiMy449x-clg_fMoHqKLx';
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-let supabaseAdmin = null;
-if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
-  supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-  console.log('✅ [Supabase Admin] Server client terinisialisasi dengan Service Role Key.');
-} else {
-  console.warn('⚠️ [Supabase Admin] SUPABASE_SERVICE_ROLE_KEY belum di-set. Menggunakan Anon Client Fallback.');
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  throw new Error('❌ SUPABASE_URL dan SUPABASE_ANON_KEY wajib di-set di environment.');
 }
 
-function getSupabaseClient() {
-  if (supabaseAdmin) return supabaseAdmin;
-  return createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Service Role Client khusus untuk kebutuhan administratif internal
+const supabaseAdmin = SUPABASE_SERVICE_ROLE_KEY
+  ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false }
+    })
+  : null;
+
+if (supabaseAdmin) {
+  console.log('✅ [Supabase Admin] Admin Client terinisialisasi (Internal Only).');
+} else {
+  console.warn('⚠️ [Supabase Admin] SUPABASE_SERVICE_ROLE_KEY belum di-set.');
+}
+
+// User-Scoped Supabase Client (Menempelkan Bearer JWT user agar RLS berjalan)
+function createUserClient(accessToken) {
+  return createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
+    global: { headers: { Authorization: `Bearer ${accessToken}` } }
+  });
+}
+
+// ============================================================
+// 🔒 AUTHENTICATION MIDDLEWARE
+// ============================================================
+async function requireAuth(req, res, next) {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, error: 'Authentication Token diperlukan.' });
+    }
+
+    const accessToken = authHeader.substring(7).trim();
+    if (!accessToken) {
+      return res.status(401).json({ success: false, error: 'Access token tidak ditemukan.' });
+    }
+
+    const authClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false }
+    });
+
+    const { data: { user }, error } = await authClient.auth.getUser(accessToken);
+    if (error || !user) {
+      return res.status(401).json({ success: false, error: 'Token tidak valid atau sudah expired.' });
+    }
+
+    req.user = user;
+    req.accessToken = accessToken;
+    req.supabase = createUserClient(accessToken);
+    next();
+  } catch (error) {
+    console.error('❌ Authentication Middleware Error:', error);
+    return res.status(401).json({ success: false, error: 'Authentication gagal.' });
+  }
 }
 
 // Ensure temp-audio and uploads directories exist
@@ -57,6 +105,20 @@ if (!fs.existsSync(uploadsDir)) {
 
 // Serve temporary audio files statically
 app.use('/temp-audio', express.static(tempAudioDir));
+
+// File Upload Config (Max 10MB & Filter PDF/TXT Only)
+const upload = multer({
+  dest: 'uploads/',
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowedMimes = ['application/pdf', 'text/plain'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowedMimes.includes(file.mimetype) || ext === '.pdf' || ext === '.txt') {
+      return cb(null, true);
+    }
+    cb(new Error('Hanya file PDF dan TXT yang diperbolehkan.'));
+  }
+});
 
 // Background Cleanup Job: Runs every 10 minutes, deletes files older than 15 minutes
 setInterval(() => {
@@ -79,8 +141,6 @@ setInterval(() => {
     console.error('❌ [Cleanup Error]:', err);
   }
 }, 10 * 60 * 1000);
-
-const upload = multer({ dest: 'uploads/' });
 
 // ============================================
 // 🔑 API KEY POOL & ROTATION
@@ -186,15 +246,15 @@ function getContextForQuestion(podcastScript, currentIndex) {
   return podcastScript.slice(startIndex, safeIndex + 1);
 }
 
-// Endpoint Health Check
+// Endpoint Health Check (Public)
 app.get('/api/health', (req, res) => {
-  res.send('Server PodLearn Backend Aktif!');
+  res.json({ success: true, status: 'ok', timestamp: new Date() });
 });
 
-// Endpoint Extract PDF / TXT
-app.post('/api/extract-file', upload.single('file'), async (req, res) => {
+// Endpoint Extract PDF / TXT (Protected)
+app.post('/api/extract-file', requireAuth, upload.single('file'), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'Tidak ada file yang diunggah' });
+    if (!req.file) return res.status(400).json({ success: false, error: 'Tidak ada file yang diunggah' });
 
     const filePath = req.file.path;
     const fileMime = req.file.mimetype;
@@ -210,27 +270,27 @@ app.post('/api/extract-file', upload.single('file'), async (req, res) => {
       extractedText = fs.readFileSync(filePath, 'utf8');
     } else {
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-      return res.status(400).json({ error: 'Format file tidak didukung.' });
+      return res.status(400).json({ success: false, error: 'Format file tidak didukung.' });
     }
 
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     const trimmedText = extractedText.trim().substring(0, 8000);
 
-    if (!trimmedText) return res.status(400).json({ error: 'File kosong.' });
+    if (!trimmedText) return res.status(400).json({ success: false, error: 'File kosong.' });
 
     res.json({ success: true, text: trimmedText });
   } catch (error) {
     console.error('Error Extracting File:', error);
     if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
-    res.status(500).json({ error: 'Gagal membaca dokumen' });
+    res.status(500).json({ success: false, error: 'Gagal membaca dokumen' });
   }
 });
 
-// Endpoint 1: Generate Naskah & Quiz
-app.post('/api/generate-script', async (req, res) => {
+// Endpoint 1: Generate Naskah & Quiz (Protected)
+app.post('/api/generate-script', requireAuth, async (req, res) => {
   try {
     const { text } = req.body;
-    if (!text) return res.status(400).json({ error: 'Teks materi tidak boleh kosong' });
+    if (!text) return res.status(400).json({ success: false, error: 'Teks materi tidak boleh kosong' });
 
     const prompt = `
 Ubah materi berikut menjadi naskah podcast percakapan 2 orang:
@@ -249,7 +309,6 @@ ${text}
 `;
 
     const response = await callGeminiWithRetry(prompt, { useSchema: true });
-
     const rawText = response.text || '';
     const parsedData = JSON.parse(rawText);
 
@@ -259,25 +318,26 @@ ${text}
     });
   } catch (error) {
     console.error('❌ Error Generating Script:', error);
-    res.status(500).json({ error: 'Gagal membuat naskah podcast', details: error?.message || error });
+    res.status(500).json({ success: false, error: 'Gagal membuat naskah podcast' });
   }
 });
 
-// Endpoint 2: Generate Audio Per Segment
-app.post('/api/generate-audio-segments', async (req, res) => {
-  const createdTempFiles = []; // Pelacak temp file terisolasi milik request ini saja
+// Endpoint 2: Generate Audio Per Segment (Protected & RLS Storage)
+app.post('/api/generate-audio-segments', requireAuth, async (req, res) => {
+  const createdTempFiles = [];
 
   try {
-    const { podcast_script, user_id, podcast_id } = req.body;
+    const { podcast_script, podcast_id } = req.body;
+    const userId = req.user.id; // 🔒 Menggunakan user_id terautentikasi dari JWT
 
     if (!podcast_script || !Array.isArray(podcast_script) || podcast_script.length === 0) {
-      return res.status(400).json({ error: 'Array podcast_script wajib diisi!' });
+      return res.status(400).json({ success: false, error: 'Array podcast_script wajib diisi!' });
     }
 
-    console.log(`🎙️ [TTS Segments] Memulai pembuatan ${podcast_script.length} file audio segmen...`);
+    console.log(`🎙️ [TTS Segments] Memulai pembuatan ${podcast_script.length} file audio segmen untuk user ${userId}...`);
     const segments = [];
     const generatedPodcastId = podcast_id || `pod_${Date.now()}`;
-    const clientToUse = getSupabaseClient();
+    const userSupabase = req.supabase; // 🔒 User-Scoped Supabase Client
 
     for (let i = 0; i < podcast_script.length; i++) {
       const item = podcast_script[i];
@@ -304,19 +364,20 @@ app.post('/api/generate-audio-segments', async (req, res) => {
 
       try {
         await tts.ttsPromise(item.text, absolutePath);
-        createdTempFiles.push(absolutePath); // Tandai berkas lokal milik request ini
+        createdTempFiles.push(absolutePath);
         console.log(`✅ [TTS Segments] Local temp segmen ${i} (${item.speaker}) berhasil.`);
       } catch (ttsError) {
         console.error(`❌ [TTS Segments] Segmen ${i} (${item.speaker}) gagal:`, ttsError.message);
         throw ttsError;
       }
 
-      if (user_id && clientToUse) {
+      // Upload ke Supabase Storage via User Client (RLS Enforced)
+      if (userId && userSupabase) {
         try {
-          const storagePath = `${user_id}/${generatedPodcastId}/segment_${i}.mp3`;
+          const storagePath = `${userId}/${generatedPodcastId}/segment_${i}.mp3`;
           const fileBuffer = fs.readFileSync(absolutePath);
 
-          const { error: uploadError } = await clientToUse.storage
+          const { error: uploadError } = await userSupabase.storage
             .from('podcast-audio')
             .upload(storagePath, fileBuffer, {
               contentType: 'audio/mpeg',
@@ -324,19 +385,21 @@ app.post('/api/generate-audio-segments', async (req, res) => {
             });
 
           if (!uploadError) {
-            const { data: publicUrlData } = clientToUse.storage
+            const { data: publicUrlData } = userSupabase.storage
               .from('podcast-audio')
               .getPublicUrl(storagePath);
 
             finalAudioUrl = publicUrlData.publicUrl;
             console.log(`☁️ [Supabase Storage] Segmen ${i} diunggah ke Storage: ${finalAudioUrl}`);
 
-            // 🧹 Pembersihan Seketika: Hapus temp file lokal jika sudah berhasil terunggah
+            // Hapus temp file lokal setelah berhasil di-upload
             if (fs.existsSync(absolutePath)) {
               fs.unlinkSync(absolutePath);
               const idx = createdTempFiles.indexOf(absolutePath);
               if (idx > -1) createdTempFiles.splice(idx, 1);
             }
+          } else {
+            console.warn(`⚠️ Upload Supabase gagal (RLS/Storage): ${uploadError.message}`);
           }
         } catch (stErr) {
           console.warn('⚠️ Skip Supabase Upload (Local Fallback Dipakai):', stErr.message);
@@ -359,19 +422,18 @@ app.post('/api/generate-audio-segments', async (req, res) => {
   } catch (error) {
     console.error('❌ [Generate Audio Segments Error]:', error);
     
-    // 🧹 Pembersihan Terisolasi: Hapus hanya temp file yang terdaftar di request ini
     createdTempFiles.forEach(f => {
       if (fs.existsSync(f)) {
         try { fs.unlinkSync(f); } catch (e) {}
       }
     });
 
-    res.status(500).json({ error: 'Gagal membuat segmen audio', details: error?.message || error });
+    res.status(500).json({ success: false, error: 'Gagal membuat segmen audio' });
   }
 });
 
-// Endpoint 3: Generate & Merge Audio (Full Podcast Existing)
-app.post('/api/generate-full-podcast', async (req, res) => {
+// Endpoint 3: Generate & Merge Audio (Protected)
+app.post('/api/generate-full-podcast', requireAuth, async (req, res) => {
   const tempFiles = [];
   const reqId = crypto.randomUUID();
   const listFilePath = path.resolve(process.cwd(), `concat_list_${reqId}.txt`);
@@ -387,7 +449,7 @@ app.post('/api/generate-full-podcast', async (req, res) => {
     const { podcast_script } = req.body;
 
     if (!podcast_script || !Array.isArray(podcast_script) || podcast_script.length === 0) {
-      return res.status(400).json({ error: 'Array podcast_script wajib diisi!' });
+      return res.status(400).json({ success: false, error: 'Array podcast_script wajib diisi!' });
     }
 
     console.log(`🎙️ [TTS] Memulai pemrosesan ${podcast_script.length} dialog audio...`);
@@ -403,7 +465,6 @@ app.post('/api/generate-full-podcast', async (req, res) => {
         timeout: 30000
       });
 
-      // 🔒 UUID Collision-Safe Naming
       const tempPath = path.resolve(process.cwd(), `temp_${i}_${crypto.randomUUID()}.mp3`);
 
       await new Promise(r => setTimeout(r, 150));
@@ -440,24 +501,24 @@ app.post('/api/generate-full-podcast', async (req, res) => {
       .on('error', (err) => {
         console.error('❌ [FFmpeg Error]:', err);
         cleanAllTemp();
-        res.status(500).json({ error: 'Gagal menggabungkan audio podcast', details: err.message });
+        res.status(500).json({ success: false, error: 'Gagal menggabungkan audio podcast' });
       })
       .run();
 
   } catch (error) {
     console.error('❌ [Full Podcast Error]:', error);
     cleanAllTemp();
-    res.status(500).json({ error: 'Gagal memproses full podcast', details: error.message });
+    res.status(500).json({ success: false, error: 'Gagal memproses full podcast' });
   }
 });
 
-// Endpoint 4: Ask Question
-app.post('/api/ask-question', async (req, res) => {
+// Endpoint 4: Ask Question (Protected)
+app.post('/api/ask-question', requireAuth, async (req, res) => {
   try {
     const { question, currentIndex, podcastScript, sourceMaterial } = req.body;
 
     if (!question || typeof currentIndex !== 'number' || !podcastScript) {
-      return res.status(400).json({ error: 'Parameter question, currentIndex, dan podcastScript wajib diisi' });
+      return res.status(400).json({ success: false, error: 'Parameter question, currentIndex, dan podcastScript wajib diisi' });
     }
 
     const contextSegments = getContextForQuestion(podcastScript, currentIndex);
@@ -485,7 +546,6 @@ Aturan Jawaban:
 `;
 
     const response = await callGeminiWithRetry(prompt);
-
     const answerText = response.text ? response.text.trim() : 'Maaf, saya tidak dapat menjawab pertanyaan tersebut saat ini.';
 
     res.json({
@@ -495,61 +555,97 @@ Aturan Jawaban:
 
   } catch (error) {
     console.error('❌ [Ask Question Error]:', error);
-    res.status(500).json({ error: 'Gagal memproses pertanyaan', details: error?.message || error });
+    res.status(500).json({ success: false, error: 'Gagal memproses pertanyaan' });
   }
 });
 
-// Endpoint 5: Hapus Podcast (Anti-Crash & Robust Deletion)
-app.post('/api/delete-podcast', async (req, res) => {
+// Endpoint 5: Hapus Podcast (Protected & Verified Ownership via RLS)
+app.post('/api/delete-podcast', requireAuth, async (req, res) => {
   try {
-    const { podcast_id, user_id } = req.body;
+    const { podcast_id } = req.body; // 🔒 user_id TIDAK DIAMBIL dari body
+    const userId = req.user.id;
+    const userSupabase = req.supabase;
 
-    if (!podcast_id || !user_id) {
-      return res.status(400).json({ success: false, error: 'podcast_id dan user_id wajib diisi' });
+    if (!podcast_id) {
+      return res.status(400).json({ success: false, error: 'podcast_id wajib diisi' });
     }
 
-    const clientToUse = getSupabaseClient();
-    const folderPath = `${user_id}/${podcast_id}`;
+    console.log(`🗑️ Delete Request: podcast_id=${podcast_id}, user_id=${userId}`);
 
-    // 1. Storage Cleanup (Isolated & Non-Blocking jika folder kosong/tidak ada)
+    // 1. Verifikasi Ownership DB terlebih dahulu via User Client (RLS)
+    const { data: podcast, error: fetchErr } = await userSupabase
+      .from('podcasts')
+      .select('id, user_id')
+      .eq('id', podcast_id)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (fetchErr) {
+      console.error('❌ Ownership check error:', fetchErr.message);
+      return res.status(500).json({ success: false, error: 'Gagal memverifikasi kepemilikan podcast.' });
+    }
+
+    if (!podcast) {
+      return res.status(404).json({ success: false, error: 'Podcast tidak ditemukan atau bukan milik Anda.' });
+    }
+
+    // 2. Storage Cleanup (Folder Scoped: {userId}/{podcast_id})
+    const folderPath = `${userId}/${podcast_id}`;
     try {
-      const { data: filesList } = await clientToUse.storage
+      const { data: filesList, error: listError } = await userSupabase.storage
         .from('podcast-audio')
         .list(folderPath);
 
-      if (filesList && filesList.length > 0) {
-        const filesToRemove = filesList.map(f => `${folderPath}/${f.name}`);
-        await clientToUse.storage
-          .from('podcast-audio')
-          .remove(filesToRemove);
-        console.log(`🧹 Storage cleanup selesai untuk folder: ${folderPath}`);
+      if (!listError && filesList && filesList.length > 0) {
+        const filesToRemove = filesList.filter(f => f.name).map(f => `${folderPath}/${f.name}`);
+        if (filesToRemove.length > 0) {
+          const { error: removeError } = await userSupabase.storage
+            .from('podcast-audio')
+            .remove(filesToRemove);
+          if (removeError) {
+            console.error('❌ Storage delete error:', removeError.message);
+          } else {
+            console.log(`🧹 Storage cleanup selesai untuk folder: ${folderPath}`);
+          }
+        }
       }
     } catch (storageErr) {
-      console.warn('⚠️ Warning Cleanup Storage (Lanjut hapus DB):', storageErr.message);
+      console.warn('⚠️ Warning Cleanup Storage:', storageErr.message);
     }
 
-    // 2. Database Row Deletion (Mandatory Task)
-    const { error: dbError } = await clientToUse
+    // 3. Database Row Deletion (RLS User Client)
+    const { error: dbError } = await userSupabase
       .from('podcasts')
       .delete()
       .eq('id', podcast_id)
-      .eq('user_id', user_id);
+      .eq('user_id', userId);
 
     if (dbError) {
       console.error('❌ Gagal hapus DB row:', dbError.message);
-      return res.status(500).json({ 
-        success: false, 
-        error: `Gagal menghapus data podcast dari database: ${dbError.message}` 
-      });
+      return res.status(500).json({ success: false, error: 'Gagal menghapus data podcast dari database' });
     }
 
-    console.log(`✅ Podcast ${podcast_id} milik user ${user_id} berhasil dihapus.`);
+    console.log(`✅ Podcast ${podcast_id} milik user ${userId} berhasil dihapus.`);
     return res.json({ success: true, message: 'Podcast berhasil dihapus.' });
 
   } catch (err) {
     console.error('❌ Fatal Error pada /api/delete-podcast:', err.message);
-    return res.status(500).json({ success: false, error: err.message });
+    return res.status(500).json({ success: false, error: 'Terjadi kesalahan internal server.' });
   }
+});
+
+// Global Multer Error Handler
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ success: false, error: 'Ukuran file maksimal 10 MB.' });
+    }
+    return res.status(400).json({ success: false, error: 'Upload file tidak valid.' });
+  }
+  if (err) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+  next();
 });
 
 const PORT = process.env.PORT || 5000;
