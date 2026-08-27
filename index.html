@@ -2,7 +2,7 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
   <title>PodLearn - AI Podcast Generator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -49,13 +49,17 @@
 
     * { box-sizing: border-box; }
 
+    html, body {
+      overflow-x: hidden;
+    }
+
     body {
       margin: 0;
       background: var(--paper);
       color: var(--ink);
       font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
       min-height: 100vh;
-      padding: 24px 16px 64px;
+      padding: 20px 14px 48px;
       transition: background 0.25s ease, color 0.25s ease;
     }
 
@@ -65,11 +69,11 @@
     }
 
     .shell {
-      max-width: 760px;
+      max-width: 840px;
       margin: 0 auto;
       display: flex;
       flex-direction: column;
-      gap: 24px;
+      gap: 20px;
     }
 
     /* ---------- Header ---------- */
@@ -78,6 +82,7 @@
       align-items: center;
       justify-content: space-between;
       gap: 12px;
+      flex-wrap: wrap;
     }
 
     .brand {
@@ -87,8 +92,8 @@
     }
 
     .brand-mark {
-      width: 52px;
-      height: 52px;
+      width: 48px;
+      height: 48px;
       border-radius: var(--radius-md);
       background: var(--accent-primary);
       border: 3px solid var(--ink);
@@ -102,20 +107,28 @@
 
     .brand-copy h1 {
       margin: 0;
-      font-size: 1.75rem;
+      font-size: 1.5rem;
       letter-spacing: -0.02em;
+      word-break: break-word;
     }
 
     .brand-copy p {
       margin: 2px 0 0;
       color: var(--ink-soft);
-      font-size: 0.85rem;
+      font-size: 0.8rem;
       font-weight: 600;
     }
 
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
     .theme-toggle {
-      width: 44px;
-      height: 44px;
+      width: 42px;
+      height: 42px;
       border-radius: 50%;
       border: 3px solid var(--ink);
       background: var(--surface);
@@ -161,7 +174,9 @@
       border: 3px solid var(--ink);
       border-radius: var(--radius-lg);
       box-shadow: 6px 6px 0 var(--shadow);
-      padding: 24px;
+      padding: 20px;
+      word-wrap: break-word;
+      overflow: hidden;
     }
 
     .card-title {
@@ -177,20 +192,40 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 12px 16px;
+      padding: 12px 14px;
       background: var(--paper);
       border: 2px solid var(--ink-soft);
       border-radius: var(--radius-md);
       gap: 12px;
       flex-wrap: wrap;
     }
+    .history-info {
+      flex: 1;
+      min-width: 200px;
+    }
     .history-info h4 {
       margin: 0;
       font-size: 0.95rem;
       color: var(--ink);
+      word-break: break-word;
     }
     .history-info span {
       font-size: 0.75rem;
+      color: var(--ink-soft);
+      font-weight: 600;
+    }
+
+    .history-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .state-box {
+      text-align: center;
+      padding: 16px;
+      font-size: 0.9rem;
       color: var(--ink-soft);
       font-weight: 600;
     }
@@ -215,11 +250,12 @@
       color: var(--ink-soft);
       font-style: italic;
       font-weight: 600;
+      word-break: break-all;
     }
 
     textarea, input[type="text"] {
       width: 100%;
-      padding: 14px;
+      padding: 12px 14px;
       border-radius: var(--radius-md);
       border: 2px solid var(--ink-soft);
       background: var(--paper);
@@ -261,8 +297,8 @@
       gap: 8px;
       font-family: 'Space Grotesk', sans-serif;
       font-weight: 700;
-      font-size: 0.95rem;
-      padding: 13px 20px;
+      font-size: 0.9rem;
+      padding: 12px 18px;
       border-radius: var(--radius-md);
       border: 3px solid var(--ink);
       cursor: pointer;
@@ -270,22 +306,24 @@
       transition: transform 0.12s ease, box-shadow 0.12s ease;
       background: var(--surface);
       color: var(--ink);
+      touch-action: manipulation;
     }
-    .btn:active { transform: translate(4px, 4px); box-shadow: none; }
+    .btn:active { transform: translate(3px, 3px); box-shadow: none; }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
     .btn-primary { background: var(--accent-primary); color: #fff; }
     .btn-secondary { background: var(--accent-secondary); color: #fff; }
     .btn-block { width: 100%; }
-    .btn-sm { padding: 9px 14px; font-size: 0.8rem; border-width: 2px; box-shadow: 3px 3px 0 var(--shadow); }
+    .btn-sm { padding: 8px 12px; font-size: 0.8rem; border-width: 2px; box-shadow: 3px 3px 0 var(--shadow); }
     .btn-ghost { background: var(--paper); }
 
     .btn-circle {
       border-radius: 50%;
-      width: 56px;
-      height: 56px;
+      width: 52px;
+      height: 52px;
       padding: 0;
-      font-size: 1.3rem;
+      font-size: 1.2rem;
+      flex-shrink: 0;
     }
 
     /* ---------- Loading ---------- */
@@ -301,6 +339,7 @@
       font-weight: 700;
       color: var(--accent-primary);
       margin: 0 0 14px;
+      font-size: 0.95rem;
     }
     .progress-track {
       width: 100%;
@@ -323,8 +362,8 @@
       align-items: center;
       justify-content: space-between;
       border-bottom: 2px dashed var(--ink-soft);
-      padding-bottom: 14px;
-      margin-bottom: 18px;
+      padding-bottom: 12px;
+      margin-bottom: 16px;
       flex-wrap: wrap;
       gap: 10px;
     }
@@ -332,7 +371,7 @@
     .segment-pill {
       display: inline-flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       font-family: 'Space Grotesk', sans-serif;
       font-weight: 700;
       font-size: 0.75rem;
@@ -350,33 +389,36 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 14px;
+      gap: 12px;
       flex-wrap: wrap;
     }
 
-    .transport { display: flex; align-items: center; gap: 8px; }
+    .transport { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
     .speed-group {
       display: flex;
       align-items: center;
-      gap: 4px;
+      gap: 2px;
       background: var(--paper);
       border: 2px solid var(--ink);
       border-radius: var(--radius-md);
-      padding: 4px;
+      padding: 3px;
       font-size: 0.72rem;
+      max-width: 100%;
+      overflow-x: auto;
     }
-    .speed-group span { padding: 0 6px; color: var(--ink-soft); font-weight: 700; }
+    .speed-group span { padding: 0 4px; color: var(--ink-soft); font-weight: 700; white-space: nowrap; }
     .speed-btn {
       border: none;
       background: transparent;
       color: var(--ink-soft);
       font-weight: 700;
-      padding: 6px 10px;
+      padding: 6px 8px;
       border-radius: var(--radius-sm);
       cursor: pointer;
       font-family: inherit;
       font-size: 0.75rem;
+      touch-action: manipulation;
     }
     .speed-btn.active { background: var(--ink); color: var(--surface); }
 
@@ -385,8 +427,8 @@
       background: var(--tint-secondary);
       border: 2px solid var(--accent-secondary);
       border-radius: var(--radius-md);
-      padding: 18px;
-      margin-top: 20px;
+      padding: 16px;
+      margin-top: 18px;
     }
     .tutor-label {
       display: flex;
@@ -398,12 +440,12 @@
       color: var(--accent-secondary);
     }
     .tutor-input-row { display: flex; gap: 8px; flex-wrap: wrap; }
-    .tutor-input-row input { flex: 1; min-width: 160px; background: var(--surface); }
+    .tutor-input-row input { flex: 1; min-width: 180px; background: var(--surface); }
 
     .answer-box {
       display: none;
       margin-top: 14px;
-      padding: 16px;
+      padding: 14px;
       background: var(--surface);
       border: 2px solid var(--accent-secondary);
       border-radius: var(--radius-sm);
@@ -416,17 +458,18 @@
       letter-spacing: 0.06em;
       color: var(--accent-secondary);
     }
-    .answer-text { margin: 6px 0 0; font-size: 0.9rem; line-height: 1.6; }
+    .answer-text { margin: 6px 0 0; font-size: 0.9rem; line-height: 1.6; word-break: break-word; }
 
     /* ---------- Script bubbles ---------- */
     .bubble {
       position: relative;
-      padding: 14px 16px;
+      padding: 12px 14px;
       border-radius: var(--radius-md);
       cursor: pointer;
       transition: box-shadow 0.15s ease, transform 0.1s ease;
       border-left: 5px solid transparent;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
+      word-break: break-word;
     }
     .bubble:hover { transform: translateX(2px); }
     .bubble:last-child { margin-bottom: 0; }
@@ -447,7 +490,7 @@
     }
     .bubble.rian .bubble-head { color: var(--accent-primary); }
     .bubble.maya .bubble-head { color: var(--accent-secondary); }
-    .bubble p { margin: 0; font-weight: 500; line-height: 1.55; }
+    .bubble p { margin: 0; font-weight: 500; line-height: 1.55; font-size: 0.9rem; }
     .bubble .eq { display: none; }
     .bubble.is-playing .eq { display: inline-flex; }
 
@@ -456,17 +499,16 @@
       background: var(--paper);
       border: 2px solid var(--ink-soft);
       border-radius: var(--radius-md);
-      padding: 18px;
-      margin-bottom: 16px;
+      padding: 16px;
+      margin-bottom: 14px;
     }
     .quiz-item:last-child { margin-bottom: 0; }
-    .quiz-question { font-weight: 700; margin: 0 0 12px; }
+    .quiz-question { font-weight: 700; margin: 0 0 10px; font-size: 0.9rem; word-break: break-word; }
     .quiz-options {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 8px;
     }
-    @media (max-width: 520px) { .quiz-options { grid-template-columns: 1fr; } }
 
     .quiz-opt {
       text-align: left;
@@ -479,6 +521,8 @@
       font-weight: 600;
       cursor: pointer;
       font-family: inherit;
+      word-break: break-word;
+      touch-action: manipulation;
     }
     .quiz-opt:hover:not(:disabled) { border-color: var(--accent-secondary); }
     .quiz-opt:disabled { cursor: default; }
@@ -493,10 +537,10 @@
       background: var(--accent-tertiary);
       color: var(--ink);
       font-weight: 800;
-      padding: 6px 14px;
+      padding: 6px 12px;
       border-radius: 999px;
       border: 2px solid var(--ink);
-      font-size: 0.85rem;
+      font-size: 0.8rem;
     }
     .score-badge.show { display: inline-flex; }
 
@@ -504,7 +548,7 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 16px;
+      margin-bottom: 14px;
       flex-wrap: wrap;
       gap: 10px;
     }
@@ -514,9 +558,22 @@
       display: flex;
       align-items: center;
       gap: 8px;
+      flex-wrap: wrap;
     }
 
     .hidden { display: none !important; }
+
+    /* ---------- RESPONSIVE MEDIA QUERIES ---------- */
+    @media (max-width: 580px) {
+      .quiz-options { grid-template-columns: 1fr; }
+      .site-header { flex-direction: column; align-items: flex-start; }
+      .header-actions { width: 100%; justify-content: space-between; }
+      .player-controls { flex-direction: column; align-items: stretch; }
+      .transport { justify-content: space-between; width: 100%; }
+      .speed-group { justify-content: center; width: 100%; }
+      .history-actions { width: 100%; justify-content: flex-end; }
+      .history-actions .btn { flex: 1; }
+    }
 
     @media (prefers-reduced-motion: reduce) {
       .eq span, .btn, .bubble, .theme-toggle { animation: none !important; transition: none !important; }
@@ -540,15 +597,15 @@
         </div>
       </div>
 
-      <div style="display: flex; align-items: center; gap: 10px;">
+      <div class="header-actions">
         <!-- Container Auth State -->
         <div id="authContainer">
           <button id="btnLoginGoogle" onclick="loginWithGoogle()" class="btn btn-ghost btn-sm">
             🔵 Login dengan Google
           </button>
           <div id="userInfo" class="auth-user-row hidden">
-            <span id="userEmailText" style="font-size: 0.8rem; font-weight: 700; color: var(--ink-soft);"></span>
-            <button onclick="logoutSupabase()" class="btn btn-ghost btn-sm">Logout</button>
+            <span id="userEmailText" style="font-size: 0.8rem; font-weight: 700; color: var(--ink-soft); word-break: break-all;"></span>
+            <button id="btnLogout" onclick="logoutSupabase()" class="btn btn-ghost btn-sm">Logout</button>
           </div>
         </div>
         <button class="theme-toggle" id="themeToggleBtn" onclick="toggleTheme()" aria-label="Ganti tema">🌙</button>
@@ -569,7 +626,7 @@
         <label class="field-label">📄 Unggah Dokumen (PDF / TXT)</label>
         <div class="upload-row">
           <input type="file" id="pdfFileInput" accept=".pdf,.txt" class="hidden" onchange="handleFileUpload(event)">
-          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('pdfFileInput').click()">📎 Pilih File</button>
+          <button id="btnSelectFile" class="btn btn-ghost btn-sm" onclick="document.getElementById('pdfFileInput').click()">📎 Pilih File</button>
           <span id="fileNameDisplay" class="file-name">Belum ada file dipilih</span>
         </div>
       </div>
@@ -596,7 +653,7 @@
     </div>
 
     <!-- Result -->
-    <div id="resultContainer" class="hidden" style="display: flex; flex-direction: column; gap: 24px;">
+    <div id="resultContainer" class="hidden" style="display: flex; flex-direction: column; gap: 20px;">
 
       <!-- Player -->
       <div class="card" id="playerCard">
@@ -612,9 +669,9 @@
 
         <div class="player-controls">
           <div class="transport">
-            <button onclick="prevSegment()" class="btn btn-ghost btn-sm">⏮️ Prev</button>
+            <button id="btnPrevSeg" onclick="prevSegment()" class="btn btn-ghost btn-sm">⏮️ Prev</button>
             <button id="btnPlayPauseSegment" onclick="togglePlayPauseSegment()" class="btn btn-primary btn-circle">▶️</button>
-            <button onclick="nextSegment()" class="btn btn-ghost btn-sm">Next ⏭️</button>
+            <button id="btnNextSeg" onclick="nextSegment()" class="btn btn-ghost btn-sm">Next ⏭️</button>
           </div>
           <div class="speed-group">
             <span>Speed</span>
@@ -645,7 +702,7 @@
       </div>
 
       <!-- Download -->
-      <div class="card" style="padding: 18px 24px;">
+      <div class="card" style="padding: 16px 20px;">
         <div class="section-header" style="margin:0;">
           <div class="card-title" style="margin:0; font-size: 0.95rem;">💾 Unduh Full Podcast (Single Audio)</div>
           <button id="btnDownloadFull" onclick="downloadFullPodcast()" class="btn btn-ghost btn-sm">Unduh MP3</button>
@@ -684,13 +741,40 @@
     let currentPlaybackRate = 1;
     let userPodcastsList = [];
 
+    // State Guards
+    let isUploadingFile = false;
+    let isProcessingPodcast = false;
+    let isAskingAI = false;
+    let isDownloadingMP3 = false;
+    let activeDeletingPodcastIds = new Set();
+
     const segmentAudioPlayer = document.getElementById('segmentAudioPlayer');
+
+    // ---------- Network Timeout Helper ----------
+    async function fetchWithTimeout(resource, options = {}, timeoutMs = 60000) {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const response = await fetch(resource, {
+          ...options,
+          signal: controller.signal
+        });
+        clearTimeout(id);
+        return response;
+      } catch (err) {
+        clearTimeout(id);
+        if (err.name === 'AbortError') {
+          throw new Error('TIMEOUT');
+        }
+        throw err;
+      }
+    }
 
     // ---------- Auth Headers Helper ----------
     async function getAuthHeaders() {
       const { data: { session } } = await supabaseClient.auth.getSession();
       if (!session || !session.access_token) {
-        throw new Error('Sesi autentikasi telah berakhir. Silakan login terlebih dahulu.');
+        throw new Error('AUTH_EXPIRED');
       }
       return {
         'Content-Type': 'application/json',
@@ -719,7 +803,6 @@
         if (btnLogin) btnLogin.classList.add('hidden');
         if (userInfo) userInfo.classList.remove('hidden');
         if (userEmailText) userEmailText.innerText = `👤 ${session.user.email}`;
-        console.log('✅ User Session Active:', session.user.id, session.user.email);
         
         loadUserPodcasts();
       } else {
@@ -728,14 +811,10 @@
         if (userEmailText) userEmailText.innerText = '';
         if (historyCard) historyCard.classList.add('hidden');
 
-        // 🔒 Total state reset saat session kosong / logout
         resetFullPlayerAndDataState();
-
-        console.log('🔒 User Logged Out & State Cleared');
       }
     }
 
-    // 🔒 Helper Fungsi Pembersihan State Total
     function resetFullPlayerAndDataState() {
       if (segmentAudioPlayer) {
         segmentAudioPlayer.pause();
@@ -750,6 +829,7 @@
       currentQuizData = [];
       userAnswers = {};
       userPodcastsList = [];
+      activeDeletingPodcastIds.clear();
 
       const resultContainer = document.getElementById('resultContainer');
       const historyListContainer = document.getElementById('historyListContainer');
@@ -767,31 +847,48 @@
     }
 
     async function loginWithGoogle() {
-      const { error } = await supabaseClient.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: window.location.origin + window.location.pathname
-        }
-      });
+      const btnLogin = document.getElementById('btnLoginGoogle');
+      btnLogin.disabled = true;
+      try {
+        const { error } = await supabaseClient.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo: window.location.origin + window.location.pathname
+          }
+        });
 
-      if (error) {
-        alert('❌ Login Error: ' + error.message);
+        if (error) alert('Gagal melakukan login Google. Silakan coba lagi.');
+      } finally {
+        btnLogin.disabled = false;
       }
     }
 
     async function logoutSupabase() {
-      // Hentikan audio secara instan sebelum network call
-      if (segmentAudioPlayer) segmentAudioPlayer.pause();
+      const btnLogout = document.getElementById('btnLogout');
+      if (btnLogout) btnLogout.disabled = true;
 
-      const { error } = await supabaseClient.auth.signOut();
-      if (error) {
-        alert('❌ Logout Error: ' + error.message);
+      if (segmentAudioPlayer) {
+        segmentAudioPlayer.pause();
+        segmentAudioPlayer.removeAttribute('src');
+        segmentAudioPlayer.load();
+      }
+
+      try {
+        const { error } = await supabaseClient.auth.signOut();
+        if (error) alert('Gagal melakukan logout. Silakan coba lagi.');
+      } finally {
+        if (btnLogout) btnLogout.disabled = false;
       }
     }
 
     // ---------- Database & History Helpers ----------
     async function loadUserPodcasts() {
       if (!currentUserSession || !currentUserSession.user) return;
+
+      const historyCard = document.getElementById('historyCard');
+      const container = document.getElementById('historyListContainer');
+      historyCard.classList.remove('hidden');
+      container.innerHTML = `<div class="state-box">⏳ Memuat riwayat...</div>`;
 
       try {
         const { data, error } = await supabaseClient
@@ -806,6 +903,13 @@
         renderPodcastHistory(userPodcastsList);
       } catch (err) {
         console.error('❌ Gagal memuat riwayat podcast:', err.message);
+        container.innerHTML = `
+          <div class="state-box" style="color: var(--danger);">
+            ⚠️ Riwayat gagal dimuat. Periksa koneksi lalu coba lagi.
+            <br>
+            <button onclick="loadUserPodcasts()" class="btn btn-ghost btn-sm" style="margin-top:8px;">🔄 Coba Lagi</button>
+          </div>
+        `;
       }
     }
 
@@ -814,7 +918,8 @@
       const container = document.getElementById('historyListContainer');
 
       if (!podcasts || podcasts.length === 0) {
-        historyCard.classList.add('hidden');
+        historyCard.classList.remove('hidden');
+        container.innerHTML = `<div class="state-box">Belum ada riwayat podcast.</div>`;
         return;
       }
 
@@ -841,6 +946,7 @@
         }
 
         const safeTitle = (pod.title || 'Podcast Tanpa Judul').replace(/'/g, "\\'");
+        const isDeleting = activeDeletingPodcastIds.has(pod.id);
 
         return `
           <div class="history-item">
@@ -848,12 +954,12 @@
               <h4>${pod.title || 'Podcast Tanpa Judul'}</h4>
               <span>📅 ${dateFormatted} · ${statusBadge}</span>
             </div>
-            <div style="display: flex; gap: 8px; align-items: center;">
-              <button onclick="openExistingPodcast('${pod.id}')" class="btn btn-secondary btn-sm">
+            <div class="history-actions">
+              <button onclick="openExistingPodcast('${pod.id}')" ${isDeleting || isProcessingPodcast ? 'disabled' : ''} class="btn btn-secondary btn-sm">
                 ${btnText}
               </button>
-              <button onclick="deletePodcast('${pod.id}', '${safeTitle}')" class="btn btn-ghost btn-sm" style="color: var(--danger); border-color: var(--danger);" title="Hapus Podcast">
-                🗑️ Hapus
+              <button onclick="deletePodcast('${pod.id}', '${safeTitle}')" ${isDeleting ? 'disabled' : ''} class="btn btn-ghost btn-sm" style="color: var(--danger); border-color: var(--danger);" title="Hapus Podcast">
+                ${isDeleting ? '⏳' : '🗑️ Hapus'}
               </button>
             </div>
           </div>
@@ -862,11 +968,11 @@
     }
 
     function openExistingPodcast(podcastId) {
+      if (isProcessingPodcast) return;
       const selectedPod = userPodcastsList.find(p => p.id === podcastId);
       if (!selectedPod) return alert('Data podcast tidak ditemukan.');
 
       currentActivePodcastId = selectedPod.id;
-
       currentPodcastScript = selectedPod.podcast_script || [];
       currentAudioSegments = selectedPod.audio_segments || [];
       currentQuizData = selectedPod.quiz_data || [];
@@ -896,41 +1002,55 @@
       document.getElementById('playerCard').scrollIntoView({ behavior: 'smooth' });
     }
 
-    // ---------- FITUR HAPUS PODCAST (VIA EXPRSS BEARER AUTH) ----------
     async function deletePodcast(podcastId, podcastTitle) {
       if (!currentUserSession || !currentUserSession.user) {
         return alert('Aksi ditolak: Anda harus login terlebih dahulu.');
       }
 
+      if (activeDeletingPodcastIds.has(podcastId)) return;
+
       const confirmDelete = confirm(`Apakah Anda yakin ingin menghapus "${podcastTitle}"?\nSemua data podcast ini akan dihapus.`);
       if (!confirmDelete) return;
+
+      activeDeletingPodcastIds.add(podcastId);
+      renderPodcastHistory(userPodcastsList);
 
       try {
         const headers = await getAuthHeaders();
 
-        const res = await fetch(`${API_BASE}/api/delete-podcast`, {
+        const res = await fetchWithTimeout(`${API_BASE}/api/delete-podcast`, {
           method: 'POST',
           headers,
-          body: JSON.stringify({
-            podcast_id: podcastId
-          })
-        });
+          body: JSON.stringify({ podcast_id: podcastId })
+        }, 30000);
 
         const data = await res.json();
         if (!data.success) throw new Error(data.error || 'Gagal menghapus podcast');
 
-        // Jika podcast yang sedang diputar dihapus, hentikan player
         if (currentActivePodcastId === podcastId) {
           currentActivePodcastId = null;
-          segmentAudioPlayer.pause();
+          if (segmentAudioPlayer) {
+            segmentAudioPlayer.pause();
+            segmentAudioPlayer.removeAttribute('src');
+            segmentAudioPlayer.load();
+          }
           document.getElementById('resultContainer').classList.add('hidden');
         }
 
-        // Refresh riwayat tanpa reload halaman
         await loadUserPodcasts();
 
       } catch (err) {
-        alert('❌ Gagal Menghapus Podcast: ' + err.message);
+        console.error('❌ Delete Podcast Error:', err);
+        if (err.message === 'AUTH_EXPIRED') {
+          alert('Sesi Anda telah berakhir. Silakan login kembali.');
+        } else if (err.message === 'TIMEOUT') {
+          alert('Waktu permintaan habis saat menghapus. Silakan coba lagi.');
+        } else {
+          alert('Podcast gagal dihapus. Silakan coba lagi.');
+        }
+      } finally {
+        activeDeletingPodcastIds.delete(podcastId);
+        renderPodcastHistory(userPodcastsList);
       }
     }
 
@@ -963,47 +1083,44 @@
       }
     }
 
-    async function savePodcastToDatabase(title, sourceText, script, segments, quiz) {
-      if (!currentUserSession || !currentUserSession.user) {
-        console.log('ℹ️ User belum login, skip simpan ke DB.');
-        return;
-      }
+    async function createInitialPodcastRecord(title, sourceText, script, quiz) {
+      if (!currentUserSession || !currentUserSession.user) return null;
 
-      try {
-        const { data, error } = await supabaseClient
-          .from('podcasts')
-          .insert([
-            {
-              user_id: currentUserSession.user.id,
-              title: title || 'Podcast Tanpa Judul',
-              source_text: sourceText,
-              podcast_script: script,
-              audio_segments: segments,
-              quiz_data: quiz,
-              last_segment_index: 0,
-              is_completed: false
-            }
-          ])
-          .select('id')
-          .single();
+      const { data, error } = await supabaseClient
+        .from('podcasts')
+        .insert([
+          {
+            user_id: currentUserSession.user.id,
+            title: title || 'Podcast Tanpa Judul',
+            source_text: sourceText,
+            podcast_script: script,
+            audio_segments: [],
+            quiz_data: quiz,
+            last_segment_index: 0,
+            is_completed: false
+          }
+        ])
+        .select('id')
+        .single();
 
-        if (error) throw error;
-
-        if (data && data.id) {
-          currentActivePodcastId = data.id;
-        }
-
-        console.log('✅ Podcast berhasil disimpan ke database Supabase!');
-        loadUserPodcasts();
-      } catch (err) {
-        console.error('❌ Gagal simpan podcast ke DB:', err.message);
-      }
+      if (error) throw error;
+      return data.id;
     }
 
-    // Jalankan initAuth
+    async function updatePodcastSegmentsInDB(podcastId, segments) {
+      if (!currentUserSession || !currentUserSession.user) return;
+
+      const { error } = await supabaseClient
+        .from('podcasts')
+        .update({ audio_segments: segments })
+        .eq('id', podcastId)
+        .eq('user_id', currentUserSession.user.id);
+
+      if (error) throw error;
+    }
+
     initAuth();
 
-    // ---------- Theme ----------
     function initTheme() {
       const saved = localStorage.getItem('podlearn-theme');
       const btn = document.getElementById('themeToggleBtn');
@@ -1031,7 +1148,6 @@
 
     initTheme();
 
-    // ---------- Playing-state indicator ----------
     function setPlayingState(isPlaying) {
       const playerCard = document.getElementById('playerCard');
       if (playerCard) playerCard.classList.toggle('is-playing', isPlaying);
@@ -1054,11 +1170,26 @@
       }
     });
 
+    segmentAudioPlayer.addEventListener('error', (e) => {
+      console.error('❌ Audio Playback Error:', e);
+      setPlayingState(false);
+      alert('Audio segmen ini tidak dapat diputar. Silakan coba muat ulang segmen.');
+    });
+
     async function handleFileUpload(event) {
-      const file = event.target.files[0];
+      if (isUploadingFile) return;
+
+      const fileInput = event.target;
+      const file = fileInput.files[0];
       if (!file) return;
 
-      document.getElementById('fileNameDisplay').innerText = "📖 Membaca " + file.name + "...";
+      isUploadingFile = true;
+      const btnSelectFile = document.getElementById('btnSelectFile');
+      const fileNameDisplay = document.getElementById('fileNameDisplay');
+
+      btnSelectFile.disabled = true;
+      fileInput.disabled = true;
+      fileNameDisplay.innerText = "📖 Membaca " + file.name + "...";
 
       const formData = new FormData();
       formData.append('file', file);
@@ -1070,27 +1201,41 @@
           headers['Authorization'] = `Bearer ${session.access_token}`;
         }
 
-        const res = await fetch(`${API_BASE}/api/extract-file`, {
+        const res = await fetchWithTimeout(`${API_BASE}/api/extract-file`, {
           method: 'POST',
           headers,
           body: formData
-        });
+        }, 45000);
 
         const data = await res.json();
         if (!data.success) throw new Error(data.error || 'Gagal membaca file');
 
         document.getElementById('materiInput').value = data.text;
-        document.getElementById('fileNameDisplay').innerText = "✅ Berhasil diekstrak: " + file.name;
+        fileNameDisplay.innerText = "✅ Berhasil diekstrak: " + file.name;
       } catch (err) {
-        alert('Error File: ' + err.message);
-        document.getElementById('fileNameDisplay').innerText = "❌ Gagal membaca file";
+        console.error('❌ Upload File Error:', err);
+        fileNameDisplay.innerText = "❌ Gagal membaca file";
+        if (err.message === 'TIMEOUT') {
+          alert('Waktu unggah habis. Silakan coba lagi.');
+        } else {
+          alert('File gagal diunggah. Pastikan file PDF/TXT dan ukurannya maksimal 10 MB.');
+        }
+      } finally {
+        isUploadingFile = false;
+        btnSelectFile.disabled = false;
+        fileInput.disabled = false;
+        fileInput.value = '';
       }
     }
 
     async function processPodcast() {
-      const text = document.getElementById('materiInput').value.trim();
-      if (!text) return alert('Isi materi dulu atau upload file PDF!');
+      if (isProcessingPodcast) return;
 
+      const textInput = document.getElementById('materiInput');
+      const text = textInput.value.trim();
+      if (!text) return alert('Silakan isi teks materi terlebih dahulu atau unggah file PDF/TXT!');
+
+      isProcessingPodcast = true;
       const btn = document.getElementById('btnGenerate');
       const loading = document.getElementById('loadingStatus');
       const result = document.getElementById('resultContainer');
@@ -1098,6 +1243,7 @@
       const progressBar = document.getElementById('progressBar');
 
       btn.disabled = true;
+      textInput.disabled = true;
       loading.classList.remove('hidden');
       result.classList.add('hidden');
       document.getElementById('tutorAnswerBox').classList.remove('show');
@@ -1105,17 +1251,19 @@
       userAnswers = {};
       document.getElementById('scoreBadge').classList.remove('show');
 
+      let createdDbPodcastId = null;
+
       try {
         const headers = await getAuthHeaders();
 
         stepText.innerText = "1/3 Sedang meracik naskah & kuis (Gemini AI)...";
         progressBar.style.width = "33%";
 
-        const scriptRes = await fetch(`${API_BASE}/api/generate-script`, {
+        const scriptRes = await fetchWithTimeout(`${API_BASE}/api/generate-script`, {
           method: 'POST',
           headers,
           body: JSON.stringify({ text })
-        });
+        }, 60000);
         const scriptData = await scriptRes.json();
 
         if (!scriptData.success) throw new Error(scriptData.error || 'Gagal generate naskah');
@@ -1127,44 +1275,59 @@
         renderScriptBox();
         renderQuiz();
 
+        if (currentUserSession && currentUserSession.user) {
+          createdDbPodcastId = await createInitialPodcastRecord(
+            'Podcast ' + new Date().toLocaleDateString('id-ID'),
+            text,
+            currentPodcastScript,
+            currentQuizData
+          );
+          currentActivePodcastId = createdDbPodcastId;
+        }
+
+        const activePodcastId = createdDbPodcastId || ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'pod_' + Date.now());
+
         stepText.innerText = "2/3 Mengisi suara AI per segmen...";
         progressBar.style.width = "75%";
 
-        const podcastId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'pod_' + Date.now();
-
-        const segRes = await fetch(`${API_BASE}/api/generate-audio-segments`, {
+        const segRes = await fetchWithTimeout(`${API_BASE}/api/generate-audio-segments`, {
           method: 'POST',
           headers,
           body: JSON.stringify({ 
             podcast_script,
-            podcast_id: podcastId
+            podcast_id: activePodcastId
           })
-        });
+        }, 180000);
         const segData = await segRes.json();
 
         if (!segData.success) throw new Error(segData.error || 'Gagal generate segmen audio');
 
         currentAudioSegments = segData.segments;
 
-        await savePodcastToDatabase(
-          'Podcast ' + new Date().toLocaleDateString('id-ID'),
-          text,
-          currentPodcastScript,
-          currentAudioSegments,
-          currentQuizData
-        );
+        if (createdDbPodcastId) {
+          await updatePodcastSegmentsInDB(createdDbPodcastId, currentAudioSegments);
+          await loadUserPodcasts();
+        }
 
         stepText.innerText = "3/3 Podcast interaktif siap diputar!";
         progressBar.style.width = "100%";
 
         result.classList.remove('hidden');
-
         loadAndPlaySegment(0, false);
 
       } catch (err) {
-        alert('Error: ' + err.message);
+        console.error('❌ Process Podcast Error:', err);
+        if (err.message === 'AUTH_EXPIRED') {
+          alert('Sesi Anda telah berakhir. Silakan login kembali.');
+        } else if (err.message === 'TIMEOUT') {
+          alert('Waktu pemrosesan habis. Silakan coba lagi.');
+        } else {
+          alert('Naskah atau audio gagal dibuat. Silakan coba lagi.');
+        }
       } finally {
+        isProcessingPodcast = false;
         btn.disabled = false;
+        textInput.disabled = false;
         loading.classList.add('hidden');
       }
     }
@@ -1189,6 +1352,10 @@
     function loadAndPlaySegment(index, autoPlay = true) {
       if (!currentAudioSegments || currentAudioSegments.length === 0) return;
 
+      if (segmentAudioPlayer) {
+        segmentAudioPlayer.pause();
+      }
+
       const prevBubble = document.getElementById(`script-bubble-${currentSegmentIndex}`);
       if (prevBubble) prevBubble.classList.remove('active-speaking', 'is-playing');
 
@@ -1205,8 +1372,6 @@
       segmentAudioPlayer.src = isFullUrl ? targetSeg.audioUrl : `${API_BASE}${targetSeg.audioUrl}`;
 
       segmentAudioPlayer.playbackRate = currentPlaybackRate;
-
-      // 💾 Otomatis simpan progress setiap kali segmen diputar/dipindah
       savePlaybackProgress(index);
 
       if (autoPlay) {
@@ -1242,12 +1407,15 @@
     }
 
     async function askTutorAI() {
+      if (isAskingAI) return;
+
       const qInput = document.getElementById('questionInput');
       const question = qInput.value.trim();
       const sourceMaterial = document.getElementById('materiInput').value.trim();
 
-      if (!question) return alert('Ketikkan pertanyaanmu terlebih dahulu!');
+      if (!question) return alert('Silakan ketikkan pertanyaan Anda terlebih dahulu.');
 
+      isAskingAI = true;
       segmentAudioPlayer.pause();
 
       const btnAsk = document.getElementById('btnAskQuestion');
@@ -1255,6 +1423,7 @@
       const answerText = document.getElementById('tutorAnswerText');
 
       btnAsk.disabled = true;
+      qInput.disabled = true;
       btnAsk.innerText = 'Memproses...';
       answerBox.classList.add('show');
       answerText.innerText = '🤔 Tutor AI sedang berpikir...';
@@ -1262,7 +1431,7 @@
       try {
         const headers = await getAuthHeaders();
 
-        const res = await fetch(`${API_BASE}/api/ask-question`, {
+        const res = await fetchWithTimeout(`${API_BASE}/api/ask-question`, {
           method: 'POST',
           headers,
           body: JSON.stringify({
@@ -1271,7 +1440,7 @@
             podcastScript: currentPodcastScript,
             sourceMaterial
           })
-        });
+        }, 45000);
 
         const data = await res.json();
         if (!data.success) throw new Error(data.error || 'Gagal mendapatkan jawaban');
@@ -1279,14 +1448,26 @@
         answerText.innerText = data.answer;
         qInput.value = '';
       } catch (err) {
-        answerText.innerText = '❌ Error: ' + err.message;
+        console.error('❌ Ask Tutor AI Error:', err);
+        if (err.message === 'AUTH_EXPIRED') {
+          answerText.innerText = '❌ Sesi Anda telah berakhir. Silakan login kembali.';
+        } else if (err.message === 'TIMEOUT') {
+          answerText.innerText = '❌ Waktu permintaan habis. Silakan coba lagi.';
+        } else {
+          answerText.innerText = '❌ Jawaban AI gagal dimuat. Silakan coba lagi.';
+        }
       } finally {
+        isAskingAI = false;
         btnAsk.disabled = false;
+        qInput.disabled = false;
         btnAsk.innerText = 'Tanya';
       }
     }
 
     async function downloadFullPodcast() {
+      if (isDownloadingMP3) return;
+
+      isDownloadingMP3 = true;
       const btn = document.getElementById('btnDownloadFull');
       btn.disabled = true;
       btn.innerText = 'Menggabungkan...';
@@ -1294,11 +1475,11 @@
       try {
         const headers = await getAuthHeaders();
 
-        const res = await fetch(`${API_BASE}/api/generate-full-podcast`, {
+        const res = await fetchWithTimeout(`${API_BASE}/api/generate-full-podcast`, {
           method: 'POST',
           headers,
           body: JSON.stringify({ podcast_script: currentPodcastScript })
-        });
+        }, 180000);
 
         if (!res.ok) throw new Error('Gagal membuat full podcast MP3');
 
@@ -1310,8 +1491,16 @@
         a.click();
         URL.revokeObjectURL(url);
       } catch (err) {
-        alert('Error: ' + err.message);
+        console.error('❌ Download MP3 Error:', err);
+        if (err.message === 'AUTH_EXPIRED') {
+          alert('Sesi Anda telah berakhir. Silakan login kembali.');
+        } else if (err.message === 'TIMEOUT') {
+          alert('Waktu penggabungan audio habis. Silakan coba lagi.');
+        } else {
+          alert('Audio gagal dibuat. Silakan coba lagi.');
+        }
       } finally {
+        isDownloadingMP3 = false;
         btn.disabled = false;
         btn.innerText = 'Unduh MP3';
       }

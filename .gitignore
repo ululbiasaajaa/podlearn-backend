@@ -1,6 +1,29 @@
+# Dependencies
 node_modules/
+.pnpm-store/
+
+# Environment Variables
+.env
+.env.*
+!.env.example
+
+# Temporary Uploads & Audio Artifacts
 uploads/
 temp-audio/
-.env
 *.mp3
 concat_list_*.txt
+temp_*.mp3
+full_podcast_*.mp3
+
+# Logs & Runtime
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs/
+*.log
+
+# OS / Editor Files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

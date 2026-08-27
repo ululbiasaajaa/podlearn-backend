@@ -23,21 +23,21 @@ ffmpeg.setFfmpegPath(ffmpegInstaller);
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '5mb' }));
 app.use(express.static('.'));
 
 // ============================================================
-// 🔒 SUPABASE CONFIG & CLIENTS
+// 🔒 SUPABASE CONFIG & CLIENTS (Strict Environment Variable)
 // ============================================================
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://egkrbtmszicrsavtrfta.supabase.co';
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'sb_publishable_7Vtbl3pupXGiMy449x-clg_fMoHqKLx';
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  throw new Error('❌ SUPABASE_URL dan SUPABASE_ANON_KEY wajib di-set di environment.');
+  throw new Error('❌ SUPABASE_URL dan SUPABASE_ANON_KEY wajib di-set di environment variables.');
 }
 
-// Service Role Client khusus untuk kebutuhan administratif internal
+// Service Role Client khusus untuk kebutuhan administratif internal (Opsional)
 const supabaseAdmin = SUPABASE_SERVICE_ROLE_KEY
   ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
       auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false }
@@ -45,9 +45,7 @@ const supabaseAdmin = SUPABASE_SERVICE_ROLE_KEY
   : null;
 
 if (supabaseAdmin) {
-  console.log('✅ [Supabase Admin] Admin Client terinisialisasi (Internal Only).');
-} else {
-  console.warn('⚠️ [Supabase Admin] SUPABASE_SERVICE_ROLE_KEY belum di-set.');
+  console.log('✅ [Supabase Admin] Admin Client terinisialisasi (Server Internal Only).');
 }
 
 // User-Scoped Supabase Client (Menempelkan Bearer JWT user agar RLS berjalan)
@@ -87,7 +85,7 @@ async function requireAuth(req, res, next) {
     req.supabase = createUserClient(accessToken);
     next();
   } catch (error) {
-    console.error('❌ Authentication Middleware Error:', error);
+    console.error('❌ Authentication Middleware Error');
     return res.status(401).json({ success: false, error: 'Authentication gagal.' });
   }
 }
@@ -103,8 +101,8 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Serve temporary audio files statically
-app.use('/temp-audio', express.static(tempAudioDir));
+// 🔒 PROTECTED Fallback Static Audio Server (Requires JWT Authorization)
+app.use('/temp-audio', requireAuth, express.static(tempAudioDir));
 
 // File Upload Config (Max 10MB & Filter PDF/TXT Only)
 const upload = multer({
@@ -120,12 +118,12 @@ const upload = multer({
   }
 });
 
-// Background Cleanup Job: Runs every 10 minutes, deletes files older than 15 minutes
+// Background Cleanup Job: Deletes temp files older than 15 minutes
 setInterval(() => {
   try {
     const files = fs.readdirSync(tempAudioDir);
     const now = Date.now();
-    const maxAgeMs = 15 * 60 * 1000; // 15 minutes
+    const maxAgeMs = 15 * 60 * 1000;
 
     files.forEach((file) => {
       const filePath = path.join(tempAudioDir, file);
@@ -134,16 +132,15 @@ setInterval(() => {
       const fileAge = now - fileCreatedTime;
       if (fileAge > maxAgeMs && fileAge > 60000) {
         fs.unlinkSync(filePath);
-        console.log(`🧹 [Cleanup] File temp audio dihapus: ${file}`);
       }
     });
   } catch (err) {
-    console.error('❌ [Cleanup Error]:', err);
+    console.error('❌ [Cleanup Error]: Gagal membersihkan temp files');
   }
 }, 10 * 60 * 1000);
 
 // ============================================
-// 🔑 API KEY POOL & ROTATION
+// 🔑 API KEY POOL & ROTATION (Server Side Only)
 // ============================================
 const apiKeys = (process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || '')
   .split(',')
@@ -151,10 +148,8 @@ const apiKeys = (process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || ''
   .filter(k => k.length > 0);
 
 if (apiKeys.length === 0) {
-  throw new Error('❌ GEMINI_API_KEYS (atau GEMINI_API_KEY) belum di-set di .env');
+  throw new Error('❌ GEMINI_API_KEYS (atau GEMINI_API_KEY) belum di-set di environment variables.');
 }
-
-console.log(`🔑 [Key Pool] ${apiKeys.length} API key terdaftar.`);
 
 let currentKeyIndex = 0;
 
@@ -164,7 +159,6 @@ function getAiClient() {
 
 function rotateKey() {
   currentKeyIndex = (currentKeyIndex + 1) % apiKeys.length;
-  console.warn(`🔄 [Key Rotation] Pindah ke API key index ${currentKeyIndex}`);
 }
 
 async function callGeminiWithRetry(prompt, options = {}, retries) {
@@ -222,10 +216,8 @@ async function callGeminiWithRetry(prompt, options = {}, retries) {
 
       if (isRateLimit) {
         rotateKey();
-
         if ((i + 1) % apiKeys.length === 0) {
           const waitTime = 15000 + (i * 2000);
-          console.warn(`⚠️ [Gemini Rate Limit 429] Semua key kena limit. Menunggu ${waitTime / 1000} detik...`);
           await new Promise(r => setTimeout(r, waitTime));
         }
       } else {
@@ -276,11 +268,11 @@ app.post('/api/extract-file', requireAuth, upload.single('file'), async (req, re
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     const trimmedText = extractedText.trim().substring(0, 8000);
 
-    if (!trimmedText) return res.status(400).json({ success: false, error: 'File kosong.' });
+    if (!trimmedText) return res.status(400).json({ success: false, error: 'File kosong atau teks tidak terbaca.' });
 
     res.json({ success: true, text: trimmedText });
   } catch (error) {
-    console.error('Error Extracting File:', error);
+    console.error('Error Extracting File');
     if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
     res.status(500).json({ success: false, error: 'Gagal membaca dokumen' });
   }
@@ -290,7 +282,11 @@ app.post('/api/extract-file', requireAuth, upload.single('file'), async (req, re
 app.post('/api/generate-script', requireAuth, async (req, res) => {
   try {
     const { text } = req.body;
-    if (!text) return res.status(400).json({ success: false, error: 'Teks materi tidak boleh kosong' });
+    if (!text || typeof text !== 'string' || !text.trim()) {
+      return res.status(400).json({ success: false, error: 'Teks materi tidak boleh kosong' });
+    }
+
+    const cleanText = text.trim().substring(0, 12000);
 
     const prompt = `
 Ubah materi berikut menjadi naskah podcast percakapan 2 orang:
@@ -305,7 +301,7 @@ ATURAN FORMAT KUIS (WAJIB DIIKUTI PERSIS, JANGAN DILANGGAR):
 - Field "answer" HANYA berisi SATU HURUF KAPITAL (A, B, C, atau D) yang sesuai opsi yang benar -- JANGAN sertakan teks jawaban di field ini, cukup hurufnya saja. Contoh benar: "B". Contoh salah: "B. Pengujian toksisitas...".
 
 Materi:
-${text}
+${cleanText}
 `;
 
     const response = await callGeminiWithRetry(prompt, { useSchema: true });
@@ -317,36 +313,37 @@ ${text}
       data: parsedData,
     });
   } catch (error) {
-    console.error('❌ Error Generating Script:', error);
+    console.error('❌ Error Generating Script');
     res.status(500).json({ success: false, error: 'Gagal membuat naskah podcast' });
   }
 });
 
-// Endpoint 2: Generate Audio Per Segment (Protected & RLS Storage)
+// Endpoint 2: Generate Audio Per Segment (Protected & Scoped Storage)
 app.post('/api/generate-audio-segments', requireAuth, async (req, res) => {
   const createdTempFiles = [];
 
   try {
     const { podcast_script, podcast_id } = req.body;
-    const userId = req.user.id; // 🔒 Menggunakan user_id terautentikasi dari JWT
+    const userId = req.user.id;
+
+    if (!podcast_id || typeof podcast_id !== 'string') {
+      return res.status(400).json({ success: false, error: 'podcast_id wajib diisi!' });
+    }
 
     if (!podcast_script || !Array.isArray(podcast_script) || podcast_script.length === 0) {
       return res.status(400).json({ success: false, error: 'Array podcast_script wajib diisi!' });
     }
 
-    console.log(`🎙️ [TTS Segments] Memulai pembuatan ${podcast_script.length} file audio segmen untuk user ${userId}...`);
     const segments = [];
-    const generatedPodcastId = podcast_id || `pod_${Date.now()}`;
-    const userSupabase = req.supabase; // 🔒 User-Scoped Supabase Client
+    const userSupabase = req.supabase;
 
     for (let i = 0; i < podcast_script.length; i++) {
       const item = podcast_script[i];
+      if (!item || !item.text) continue;
 
       let selectedVoice = 'id-ID-ArdiNeural';
       if (item.speaker === 'Maya') {
         selectedVoice = 'id-ID-GadisNeural';
-      } else if (item.speaker !== 'Rian') {
-        console.warn(`⚠️ Speaker tidak dikenal (${item.speaker}), menggunakan voice default Rian.`);
       }
 
       const tts = new EdgeTTS({
@@ -365,16 +362,14 @@ app.post('/api/generate-audio-segments', requireAuth, async (req, res) => {
       try {
         await tts.ttsPromise(item.text, absolutePath);
         createdTempFiles.push(absolutePath);
-        console.log(`✅ [TTS Segments] Local temp segmen ${i} (${item.speaker}) berhasil.`);
       } catch (ttsError) {
-        console.error(`❌ [TTS Segments] Segmen ${i} (${item.speaker}) gagal:`, ttsError.message);
+        console.error(`❌ [TTS Segments] Segmen ${i} gagal`);
         throw ttsError;
       }
 
-      // Upload ke Supabase Storage via User Client (RLS Enforced)
       if (userId && userSupabase) {
         try {
-          const storagePath = `${userId}/${generatedPodcastId}/segment_${i}.mp3`;
+          const storagePath = `${userId}/${podcast_id}/segment_${i}.mp3`;
           const fileBuffer = fs.readFileSync(absolutePath);
 
           const { error: uploadError } = await userSupabase.storage
@@ -390,37 +385,32 @@ app.post('/api/generate-audio-segments', requireAuth, async (req, res) => {
               .getPublicUrl(storagePath);
 
             finalAudioUrl = publicUrlData.publicUrl;
-            console.log(`☁️ [Supabase Storage] Segmen ${i} diunggah ke Storage: ${finalAudioUrl}`);
 
-            // Hapus temp file lokal setelah berhasil di-upload
             if (fs.existsSync(absolutePath)) {
               fs.unlinkSync(absolutePath);
               const idx = createdTempFiles.indexOf(absolutePath);
               if (idx > -1) createdTempFiles.splice(idx, 1);
             }
-          } else {
-            console.warn(`⚠️ Upload Supabase gagal (RLS/Storage): ${uploadError.message}`);
           }
         } catch (stErr) {
-          console.warn('⚠️ Skip Supabase Upload (Local Fallback Dipakai):', stErr.message);
+          // Fallback lokal aktif jika upload ke storage mengalami kendala
         }
       }
 
       segments.push({
         index: i,
-        speaker: item.speaker,
+        speaker: item.speaker || 'Host',
         audioUrl: finalAudioUrl
       });
     }
 
-    console.log(`✅ [TTS Segments] Selesai memproses ${segments.length} segmen.`);
     res.json({
       success: true,
       segments
     });
 
   } catch (error) {
-    console.error('❌ [Generate Audio Segments Error]:', error);
+    console.error('❌ [Generate Audio Segments Error]');
     
     createdTempFiles.forEach(f => {
       if (fs.existsSync(f)) {
@@ -452,10 +442,10 @@ app.post('/api/generate-full-podcast', requireAuth, async (req, res) => {
       return res.status(400).json({ success: false, error: 'Array podcast_script wajib diisi!' });
     }
 
-    console.log(`🎙️ [TTS] Memulai pemrosesan ${podcast_script.length} dialog audio...`);
-
     for (let i = 0; i < podcast_script.length; i++) {
       const item = podcast_script[i];
+      if (!item || !item.text) continue;
+
       const selectedVoice = (item.speaker === 'Rian') ? 'id-ID-ArdiNeural' : 'id-ID-GadisNeural';
 
       const tts = new EdgeTTS({
@@ -472,9 +462,8 @@ app.post('/api/generate-full-podcast', requireAuth, async (req, res) => {
       try {
         await tts.ttsPromise(item.text, tempPath);
         tempFiles.push(tempPath);
-        console.log(`✅ [TTS Full] Segmen ${i} (${item.speaker}) berhasil.`);
       } catch (ttsError) {
-        console.error(`❌ [TTS Full] Segmen ${i} (${item.speaker}) gagal:`, ttsError.message);
+        console.error(`❌ [TTS Full] Segmen ${i} gagal`);
         throw ttsError;
       }
     }
@@ -485,28 +474,25 @@ app.post('/api/generate-full-podcast', requireAuth, async (req, res) => {
 
     fs.writeFileSync(listFilePath, fileListContent);
 
-    console.log('🎵 [FFmpeg] Menggabungkan potongan file audio MP3...');
-
     ffmpeg()
       .input(listFilePath)
       .inputOptions(['-f concat', '-safe 0'])
       .outputOptions('-c copy')
       .output(outputPath)
       .on('end', () => {
-        console.log('✅ [FFmpeg] Penggabungan Selesai!');
         res.sendFile(outputPath, () => {
           cleanAllTemp();
         });
       })
       .on('error', (err) => {
-        console.error('❌ [FFmpeg Error]:', err);
+        console.error('❌ [FFmpeg Error]');
         cleanAllTemp();
         res.status(500).json({ success: false, error: 'Gagal menggabungkan audio podcast' });
       })
       .run();
 
   } catch (error) {
-    console.error('❌ [Full Podcast Error]:', error);
+    console.error('❌ [Full Podcast Error]');
     cleanAllTemp();
     res.status(500).json({ success: false, error: 'Gagal memproses full podcast' });
   }
@@ -517,8 +503,12 @@ app.post('/api/ask-question', requireAuth, async (req, res) => {
   try {
     const { question, currentIndex, podcastScript, sourceMaterial } = req.body;
 
-    if (!question || typeof currentIndex !== 'number' || !podcastScript) {
-      return res.status(400).json({ success: false, error: 'Parameter question, currentIndex, dan podcastScript wajib diisi' });
+    if (!question || typeof question !== 'string' || !question.trim()) {
+      return res.status(400).json({ success: false, error: 'Pertanyaan tidak boleh kosong.' });
+    }
+
+    if (typeof currentIndex !== 'number' || !podcastScript) {
+      return res.status(400).json({ success: false, error: 'Parameter currentIndex dan podcastScript wajib diisi' });
     }
 
     const contextSegments = getContextForQuestion(podcastScript, currentIndex);
@@ -529,14 +519,14 @@ Learner sedang mendengarkan podcast edukasi dan menghentikan putaran audio untuk
 
 Materi Sumber Utama (Source Material):
 """
-${sourceMaterial || 'Tidak ada teks materi tambahan.'}
+${(sourceMaterial || '').substring(0, 8000) || 'Tidak ada teks materi tambahan.'}
 """
 
 Konteks Percakapan Podcast Terakhir Didegar (maksimal 4 segmen):
 ${JSON.stringify(contextSegments, null, 2)}
 
 Pertanyaan Learner:
-"${question}"
+"${question.trim()}"
 
 Aturan Jawaban:
 1. Jawab berdasarkan Materi Sumber dan Konteks Percakapan di atas.
@@ -554,25 +544,23 @@ Aturan Jawaban:
     });
 
   } catch (error) {
-    console.error('❌ [Ask Question Error]:', error);
+    console.error('❌ [Ask Question Error]');
     res.status(500).json({ success: false, error: 'Gagal memproses pertanyaan' });
   }
 });
 
-// Endpoint 5: Hapus Podcast (Protected & Verified Ownership via RLS)
+// Endpoint 5: Hapus Podcast (Protected & Verified Ownership via User RLS)
 app.post('/api/delete-podcast', requireAuth, async (req, res) => {
   try {
-    const { podcast_id } = req.body; // 🔒 user_id TIDAK DIAMBIL dari body
+    const { podcast_id } = req.body;
     const userId = req.user.id;
     const userSupabase = req.supabase;
 
-    if (!podcast_id) {
+    if (!podcast_id || typeof podcast_id !== 'string') {
       return res.status(400).json({ success: false, error: 'podcast_id wajib diisi' });
     }
 
-    console.log(`🗑️ Delete Request: podcast_id=${podcast_id}, user_id=${userId}`);
-
-    // 1. Verifikasi Ownership DB terlebih dahulu via User Client (RLS)
+    // 1. Verifikasi Ownership DB via User Client RLS
     const { data: podcast, error: fetchErr } = await userSupabase
       .from('podcasts')
       .select('id, user_id')
@@ -581,7 +569,6 @@ app.post('/api/delete-podcast', requireAuth, async (req, res) => {
       .maybeSingle();
 
     if (fetchErr) {
-      console.error('❌ Ownership check error:', fetchErr.message);
       return res.status(500).json({ success: false, error: 'Gagal memverifikasi kepemilikan podcast.' });
     }
 
@@ -589,28 +576,23 @@ app.post('/api/delete-podcast', requireAuth, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Podcast tidak ditemukan atau bukan milik Anda.' });
     }
 
-    // 2. Storage Cleanup (Folder Scoped: {userId}/{podcast_id})
+    // 2. Cleanup Storage Folder ({userId}/{podcast_id})
     const folderPath = `${userId}/${podcast_id}`;
     try {
       const { data: filesList, error: listError } = await userSupabase.storage
         .from('podcast-audio')
-        .list(folderPath);
+        .list(folderPath, { limit: 100 });
 
       if (!listError && filesList && filesList.length > 0) {
         const filesToRemove = filesList.filter(f => f.name).map(f => `${folderPath}/${f.name}`);
         if (filesToRemove.length > 0) {
-          const { error: removeError } = await userSupabase.storage
+          await userSupabase.storage
             .from('podcast-audio')
             .remove(filesToRemove);
-          if (removeError) {
-            console.error('❌ Storage delete error:', removeError.message);
-          } else {
-            console.log(`🧹 Storage cleanup selesai untuk folder: ${folderPath}`);
-          }
         }
       }
     } catch (storageErr) {
-      console.warn('⚠️ Warning Cleanup Storage:', storageErr.message);
+      // Ignore non-fatal storage cleanup errors
     }
 
     // 3. Database Row Deletion (RLS User Client)
@@ -621,15 +603,13 @@ app.post('/api/delete-podcast', requireAuth, async (req, res) => {
       .eq('user_id', userId);
 
     if (dbError) {
-      console.error('❌ Gagal hapus DB row:', dbError.message);
       return res.status(500).json({ success: false, error: 'Gagal menghapus data podcast dari database' });
     }
 
-    console.log(`✅ Podcast ${podcast_id} milik user ${userId} berhasil dihapus.`);
     return res.json({ success: true, message: 'Podcast berhasil dihapus.' });
 
   } catch (err) {
-    console.error('❌ Fatal Error pada /api/delete-podcast:', err.message);
+    console.error('❌ Fatal Error pada /api/delete-podcast');
     return res.status(500).json({ success: false, error: 'Terjadi kesalahan internal server.' });
   }
 });
@@ -650,5 +630,5 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`🚀 Server PodLearn berjalan di http://localhost:${PORT}`);
+  console.log(`🚀 Server PodLearn berjalan di port ${PORT}`);
 });
