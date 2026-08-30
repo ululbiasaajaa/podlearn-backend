@@ -561,6 +561,96 @@
       flex-wrap: wrap;
     }
 
+    /* ---------- Feedback Modal (Milestone 15) ---------- */
+    .feedback-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(33, 26, 52, 0.65);
+      backdrop-filter: blur(4px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      padding: 16px;
+    }
+
+    .feedback-modal {
+      background: var(--surface);
+      border: 3px solid var(--ink);
+      border-radius: var(--radius-lg);
+      box-shadow: 8px 8px 0 var(--shadow);
+      width: 100%;
+      max-width: 460px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      animation: modalPop 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    @keyframes modalPop {
+      0% { opacity: 0; transform: scale(0.92) translateY(10px); }
+      100% { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
+    .feedback-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .feedback-header h3 {
+      margin: 0;
+      font-size: 1.15rem;
+      font-family: 'Space Grotesk', sans-serif;
+    }
+
+    .feedback-close-btn {
+      background: transparent;
+      border: none;
+      font-size: 1.2rem;
+      cursor: pointer;
+      color: var(--ink-soft);
+    }
+
+    .rating-stars {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin: 6px 0;
+    }
+
+    .star-btn {
+      background: var(--paper);
+      border: 2px solid var(--ink-soft);
+      border-radius: var(--radius-sm);
+      width: 46px;
+      height: 46px;
+      font-size: 1.3rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.12s ease, border-color 0.12s ease;
+      touch-action: manipulation;
+    }
+
+    .star-btn:hover, .star-btn.active {
+      border-color: var(--accent-tertiary);
+      background: var(--tint-tertiary);
+      transform: scale(1.1);
+    }
+
+    .feedback-actions {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+      margin-top: 8px;
+    }
+
     .hidden { display: none !important; }
 
     /* ---------- RESPONSIVE MEDIA QUERIES ---------- */
@@ -573,10 +663,11 @@
       .speed-group { justify-content: center; width: 100%; }
       .history-actions { width: 100%; justify-content: flex-end; }
       .history-actions .btn { flex: 1; }
+      .star-btn { width: 40px; height: 40px; font-size: 1.1rem; }
     }
 
     @media (prefers-reduced-motion: reduce) {
-      .eq span, .btn, .bubble, .theme-toggle { animation: none !important; transition: none !important; }
+      .eq span, .btn, .bubble, .theme-toggle, .star-btn, .feedback-modal { animation: none !important; transition: none !important; }
     }
   </style>
 </head>
@@ -721,6 +812,42 @@
     </div>
   </div>
 
+  <!-- Feedback Modal Popup (Milestone 15) -->
+  <div id="feedbackModalOverlay" class="feedback-overlay hidden">
+    <div class="feedback-modal">
+      <div class="feedback-header">
+        <h3>⭐ Feedback PodLearn</h3>
+        <button class="feedback-close-btn" onclick="dismissFeedbackModal()">✕</button>
+      </div>
+
+      <div>
+        <label class="field-label" style="text-align: center;">Podcast terakhir lo gimana?</label>
+        <div class="rating-stars">
+          <button class="star-btn" onclick="selectRating(1)">1️⃣</button>
+          <button class="star-btn" onclick="selectRating(2)">2️⃣</button>
+          <button class="star-btn" onclick="selectRating(3)">3️⃣</button>
+          <button class="star-btn" onclick="selectRating(4)">4️⃣</button>
+          <button class="star-btn" onclick="selectRating(5)">5️⃣</button>
+        </div>
+      </div>
+
+      <div>
+        <label id="followupQuestionLabel" class="field-label" style="font-size: 0.85rem; color: var(--ink-soft);"></label>
+        <input type="text" id="followupAnswerInput" placeholder="Jawaban singkat lo (opsional)...">
+      </div>
+
+      <div>
+        <label class="field-label" style="font-size: 0.85rem; color: var(--ink-soft);">Ada yang mau ditambahin?</label>
+        <textarea id="feedbackCommentInput" rows="2" placeholder="Saran/kritik bebas buat PodLearn..."></textarea>
+      </div>
+
+      <div class="feedback-actions">
+        <button id="btnSkipFeedback" onclick="dismissFeedbackModal()" class="btn btn-ghost btn-sm">Lewati</button>
+        <button id="btnSubmitFeedback" onclick="submitFeedback()" class="btn btn-primary btn-sm">Kirim Feedback</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     // ============================================
     // 🔒 SUPABASE CLIENT & CONFIG
@@ -747,6 +874,12 @@
     let isAskingAI = false;
     let isDownloadingMP3 = false;
     let activeDeletingPodcastIds = new Set();
+
+    // Feedback State (Milestone 15)
+    let currentFeedbackQuestionId = null;
+    let selectedRatingValue = 0;
+    let isSubmittingFeedback = false;
+    let feedbackPromptCheckedInSession = false;
 
     const segmentAudioPlayer = document.getElementById('segmentAudioPlayer');
 
@@ -805,6 +938,7 @@
         if (userEmailText) userEmailText.innerText = `👤 ${session.user.email}`;
         
         loadUserPodcasts();
+        checkFeedbackPromptStatus();
       } else {
         if (btnLogin) btnLogin.classList.remove('hidden');
         if (userInfo) userInfo.classList.add('hidden');
@@ -812,6 +946,7 @@
         if (historyCard) historyCard.classList.add('hidden');
 
         resetFullPlayerAndDataState();
+        feedbackPromptCheckedInSession = false;
       }
     }
 
@@ -1117,6 +1252,107 @@
         .eq('user_id', currentUserSession.user.id);
 
       if (error) throw error;
+    }
+
+    // ---------- FEEDBACK SYSTEM HELPERS (Milestone 15) ----------
+    async function checkFeedbackPromptStatus() {
+      if (feedbackPromptCheckedInSession || !currentUserSession) return;
+      feedbackPromptCheckedInSession = true;
+
+      try {
+        const headers = await getAuthHeaders();
+        const res = await fetchWithTimeout(`${API_BASE}/api/feedback/status`, {
+          method: 'GET',
+          headers
+        }, 15000);
+
+        const data = await res.json();
+        if (data.success && data.showFeedback) {
+          currentFeedbackQuestionId = data.questionId;
+          document.getElementById('followupQuestionLabel').innerText = data.questionText;
+          showFeedbackModal();
+        }
+      } catch (err) {
+        console.warn('⚠️ Gagal memeriksa status feedback prompt:', err.message);
+      }
+    }
+
+    function showFeedbackModal() {
+      selectedRatingValue = 0;
+      resetStarRatingUI();
+      document.getElementById('followupAnswerInput').value = '';
+      document.getElementById('feedbackCommentInput').value = '';
+
+      const overlay = document.getElementById('feedbackModalOverlay');
+      overlay.classList.remove('hidden');
+    }
+
+    function resetStarRatingUI() {
+      document.querySelectorAll('.star-btn').forEach((btn, idx) => {
+        btn.classList.toggle('active', (idx + 1) <= selectedRatingValue);
+      });
+    }
+
+    function selectRating(val) {
+      selectedRatingValue = val;
+      resetStarRatingUI();
+    }
+
+    async function dismissFeedbackModal() {
+      const overlay = document.getElementById('feedbackModalOverlay');
+      overlay.classList.add('hidden');
+
+      try {
+        const headers = await getAuthHeaders();
+        await fetchWithTimeout(`${API_BASE}/api/feedback/dismiss`, {
+          method: 'POST',
+          headers
+        }, 15000);
+      } catch (err) {
+        console.warn('⚠️ Gagal memperbarui dismiss feedback state:', err.message);
+      }
+    }
+
+    async function submitFeedback() {
+      if (isSubmittingFeedback) return;
+      if (!selectedRatingValue) {
+        return alert('Silakan berikan rating 1–5 terlebih dahulu!');
+      }
+
+      isSubmittingFeedback = true;
+      const btnSubmit = document.getElementById('btnSubmitFeedback');
+      const btnSkip = document.getElementById('btnSkipFeedback');
+
+      btnSubmit.disabled = true;
+      btnSkip.disabled = true;
+      btnSubmit.innerText = 'Mengirim...';
+
+      try {
+        const headers = await getAuthHeaders();
+        const res = await fetchWithTimeout(`${API_BASE}/api/feedback/submit`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            rating: selectedRatingValue,
+            questionId: currentFeedbackQuestionId,
+            followupAnswer: document.getElementById('followupAnswerInput').value.trim(),
+            comment: document.getElementById('feedbackCommentInput').value.trim()
+          })
+        }, 20000);
+
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Gagal menyimpan feedback');
+
+        document.getElementById('feedbackModalOverlay').classList.add('hidden');
+      } catch (err) {
+        console.error('❌ Submit Feedback Error:', err);
+        alert('Terjadi kesalahan saat mengirim feedback. Silakan coba lagi.');
+      } finally {
+        isSubmittingFeedback = false;
+        btnSubmit.disabled = false;
+        btnSkip.disabled = false;
+        btnSubmit.innerText = 'Kirim Feedback';
+      }
     }
 
     initAuth();

@@ -37,7 +37,7 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   throw new Error('❌ SUPABASE_URL dan SUPABASE_ANON_KEY wajib di-set di environment variables.');
 }
 
-// Service Role Client khusus untuk kebutuhan administratif internal (Opsional)
+// Service Role Client khusus untuk kebutuhan administratif internal
 const supabaseAdmin = SUPABASE_SERVICE_ROLE_KEY
   ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
       auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false }
@@ -237,6 +237,15 @@ function getContextForQuestion(podcastScript, currentIndex) {
 
   return podcastScript.slice(startIndex, safeIndex + 1);
 }
+
+// ============================================================
+// 💬 FEEDBACK SYSTEM DICTIONARY & HELPERS (Milestone 15)
+// ============================================================
+const FEEDBACK_QUESTIONS = {
+  q1: 'Ada bagian yang kerasa ngebosenin/pengen di-skip?',
+  q2: 'Kuisnya kerasa nyambung sama isi podcastnya nggak?',
+  q3: 'Ada yang kerasa aneh/salah dari isi podcastnya?'
+};
 
 // Endpoint Health Check (Public)
 app.get('/api/health', (req, res) => {
@@ -610,6 +619,139 @@ app.post('/api/delete-podcast', requireAuth, async (req, res) => {
 
   } catch (err) {
     console.error('❌ Fatal Error pada /api/delete-podcast');
+    return res.status(500).json({ success: false, error: 'Terjadi kesalahan internal server.' });
+  }
+});
+
+// ============================================================
+// 💬 FEEDBACK ENDPOINTS (Milestone 15)
+// ============================================================
+
+// Endpoint A: Feedback Prompt Check (Protected)
+app.get('/api/feedback/status', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userSupabase = req.supabase;
+
+    const { data, error } = await userSupabase
+      .from('user_feedback_state')
+      .select('last_prompted_at')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) {
+      return res.status(500).json({ success: false, error: 'Gagal mengecek status feedback prompt.' });
+    }
+
+    const now = Date.now();
+    const twentyFourHoursMs = 24 * 60 * 60 * 1000;
+    let showFeedback = false;
+
+    if (!data || !data.last_prompted_at) {
+      showFeedback = true;
+    } else {
+      const lastPromptedTime = new Date(data.last_prompted_at).getTime();
+      if (now - lastPromptedTime >= twentyFourHoursMs) {
+        showFeedback = true;
+      }
+    }
+
+    if (!showFeedback) {
+      return res.json({ success: true, showFeedback: false });
+    }
+
+    // Pilih 1 dari 3 pertanyaan acak
+    const questionKeys = Object.keys(FEEDBACK_QUESTIONS);
+    const randomKey = questionKeys[Math.floor(Math.random() * questionKeys.length)];
+
+    return res.json({
+      success: true,
+      showFeedback: true,
+      questionId: randomKey,
+      questionText: FEEDBACK_QUESTIONS[randomKey]
+    });
+
+  } catch (err) {
+    console.error('❌ Error pada GET /api/feedback/status');
+    return res.status(500).json({ success: false, error: 'Terjadi kesalahan internal server.' });
+  }
+});
+
+// Endpoint B: Dismiss Feedback Prompt (Protected - UPSERT)
+app.post('/api/feedback/dismiss', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userSupabase = req.supabase;
+    const nowIso = new Date().toISOString();
+
+    const { error } = await userSupabase
+      .from('user_feedback_state')
+      .upsert({
+        user_id: userId,
+        last_prompted_at: nowIso,
+        updated_at: nowIso
+      }, { onConflict: 'user_id' });
+
+    if (error) {
+      return res.status(500).json({ success: false, error: 'Gagal memperbarui status feedback prompt.' });
+    }
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('❌ Error pada POST /api/feedback/dismiss');
+    return res.status(500).json({ success: false, error: 'Terjadi kesalahan internal server.' });
+  }
+});
+
+// Endpoint C: Submit Feedback (Protected - UPSERT State + INSERT Feedback)
+app.post('/api/feedback/submit', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userSupabase = req.supabase;
+    const { rating, questionId, followupAnswer, comment } = req.body;
+
+    if (typeof rating !== 'number' || rating < 1 || rating > 5) {
+      return res.status(400).json({ success: false, error: 'Rating wajib diisi angka 1 sampai 5.' });
+    }
+
+    const questionText = FEEDBACK_QUESTIONS[questionId] || FEEDBACK_QUESTIONS.q1;
+    const nowIso = new Date().toISOString();
+
+    // 1. Simpan data feedback
+    const { error: insertErr } = await userSupabase
+      .from('feedback')
+      .insert([
+        {
+          user_id: userId,
+          rating: Math.round(rating),
+          followup_question: questionText,
+          followup_answer: typeof followupAnswer === 'string' ? followupAnswer.trim() : '',
+          comment: typeof comment === 'string' ? comment.trim() : '',
+          created_at: nowIso
+        }
+      ]);
+
+    if (insertErr) {
+      return res.status(500).json({ success: false, error: 'Gagal menyimpan data feedback.' });
+    }
+
+    // 2. Update/Upsert state last_prompted_at
+    const { error: stateErr } = await userSupabase
+      .from('user_feedback_state')
+      .upsert({
+        user_id: userId,
+        last_prompted_at: nowIso,
+        updated_at: nowIso
+      }, { onConflict: 'user_id' });
+
+    if (stateErr) {
+      console.warn('⚠️ Feedback tersimpan namun gagal update state last_prompted_at:', stateErr.message);
+    }
+
+    return res.json({ success: true, message: 'Terima kasih atas feedback Anda!' });
+
+  } catch (err) {
+    console.error('❌ Error pada POST /api/feedback/submit');
     return res.status(500).json({ success: false, error: 'Terjadi kesalahan internal server.' });
   }
 });
