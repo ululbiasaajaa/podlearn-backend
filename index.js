@@ -15,12 +15,15 @@ import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 
 // ============================================================
-// 🔧 FIX BUG: pdf-parse (Railway Crash Fix)
-// Bypass index.js bawaan pdf-parse yang memicu 'debug mode' internal
-// dan mencari berkas test lokal yang tidak ada di server produksi.
-// Direct require ke lib/pdf-parse.js menyelesaikan masalah 500/crash.
+// 🔧 FIX BUG: pdf-parse (Railway Crash & ESM Export Fix)
+// Safe loader agar tidak memicu ERR_PACKAGE_PATH_NOT_EXPORTED pada Node v20+
 // ============================================================
-const pdfParse = require('pdf-parse/lib/pdf-parse.js');
+let pdfParse = null;
+try {
+  pdfParse = require('pdf-parse');
+} catch (e) {
+  console.warn('⚠️ Standard pdf-parse require fallback active.');
+}
 
 // Single Source of Truth untuk Model Gemini
 const GEMINI_MODEL = 'gemini-3.6-flash';
@@ -272,7 +275,14 @@ app.post('/api/extract-file', requireAuth, upload.single('file'), async (req, re
 
     if (originalName.endsWith('.pdf') || fileMime === 'application/pdf') {
       const dataBuffer = fs.readFileSync(filePath);
-      const pdfData = await pdfParse(dataBuffer);
+      
+      let parser = pdfParse;
+      if (typeof parser !== 'function') {
+        const pdfModule = await import('pdf-parse/lib/pdf-parse.js').catch(() => null);
+        parser = pdfModule?.default || pdfModule || require('pdf-parse');
+      }
+
+      const pdfData = await parser(dataBuffer);
       extractedText = pdfData.text;
     } else if (originalName.endsWith('.txt') || fileMime === 'text/plain') {
       extractedText = fs.readFileSync(filePath, 'utf8');
