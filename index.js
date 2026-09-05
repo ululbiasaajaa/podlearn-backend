@@ -287,8 +287,19 @@ app.post('/api/extract-file', requireAuth, upload.single('file'), async (req, re
       }
 
       const dataBuffer = fs.readFileSync(filePath);
-      const pdfData = await pdfParse(dataBuffer);
-      extractedText = pdfData.text || '';
+
+      // 🔧 REVISI: try-catch khusus parsing PDF, biar error ASLI dari pdf-parse
+      // (nama, message, stack) kelihatan di log Railway, bukan cuma ketutup
+      // sama pesan generik di catch paling luar.
+      try {
+        const pdfData = await pdfParse(dataBuffer);
+        extractedText = pdfData.text || '';
+      } catch (parseErr) {
+        console.error('❌ [PDF Parse Error] name:', parseErr?.name);
+        console.error('❌ [PDF Parse Error] message:', parseErr?.message);
+        console.error('❌ [PDF Parse Error] stack:', parseErr?.stack);
+        throw parseErr; // tetap dilempar ke catch luar agar response ke client tidak berubah
+      }
     } else if (originalName.endsWith('.txt') || fileMime === 'text/plain') {
       extractedText = fs.readFileSync(filePath, 'utf8');
     } else {
