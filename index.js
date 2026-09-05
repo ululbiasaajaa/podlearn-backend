@@ -17,16 +17,38 @@ const require = createRequire(import.meta.url);
 // ============================================================
 // 🔧 SAFE PDF PARSER (Node.js ESM Fix)
 // Menggunakan createRequire untuk memanggil lib/pdf-parse.js secara langsung
+//
+// 🔧 REVISI: sebelumnya hasil require() langsung dipakai sebagai function,
+// padahal tergantung versi package "pdf-parse" yang terpasang, module bisa
+// saja ter-export sebagai object (mis. { default: fn }) alih-alih function
+// langsung -- ini yang menyebabkan error runtime "pdfParse is not a function"
+// walau proses require()-nya sendiri tidak melempar error/exception.
+// Fix ini meng-unwrap ".default" bila hasil require bukan function,
+// lalu memvalidasi hasil akhirnya benar-benar callable.
 // ============================================================
+function resolvePdfParseExport(mod) {
+  if (typeof mod === 'function') return mod;
+  if (mod && typeof mod.default === 'function') return mod.default;
+  return null;
+}
+
 let pdfParse = null;
 try {
-  pdfParse = require('pdf-parse/lib/pdf-parse.js');
+  pdfParse = resolvePdfParseExport(require('pdf-parse/lib/pdf-parse.js'));
 } catch (e) {
+  // lanjut ke fallback di bawah
+}
+
+if (!pdfParse) {
   try {
-    pdfParse = require('pdf-parse');
+    pdfParse = resolvePdfParseExport(require('pdf-parse'));
   } catch (err) {
     console.error('❌ Gagal memuat library pdf-parse:', err.message);
   }
+}
+
+if (!pdfParse) {
+  console.error('❌ Module pdf-parse berhasil di-require tapi bukan function yang valid (kemungkinan struktur export package berbeda dari yang diharapkan). Cek versi "pdf-parse" di package.json.');
 }
 
 // Single Source of Truth untuk Model Gemini
