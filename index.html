@@ -1412,6 +1412,16 @@
       alert('Audio segmen ini tidak dapat diputar. Silakan coba muat ulang segmen.');
     });
 
+    // ================================================================
+    // 🔧 FIXED: handleFileUpload
+    // Bug lama: blok "catch" selalu menampilkan pesan generik
+    // "ukurannya maksimal 10 MB" untuk SEMUA jenis error (auth expired,
+    // gagal parsing PDF di server, response server tidak valid, network
+    // error, dsb) — sehingga pesan error yang muncul ke user seringkali
+    // TIDAK mencerminkan penyebab aslinya sama sekali.
+    // Fix: cek res.ok/status dulu, tangani gagal parse JSON secara
+    // eksplisit, dan tampilkan pesan error ASLI dari server/exception.
+    // ================================================================
     async function handleFileUpload(event) {
       if (isUploadingFile) return;
 
@@ -1435,6 +1445,8 @@
         const { data: { session } } = await supabaseClient.auth.getSession();
         if (session && session.access_token) {
           headers['Authorization'] = `Bearer ${session.access_token}`;
+        } else {
+          throw new Error('AUTH_REQUIRED');
         }
 
         const res = await fetchWithTimeout(`${API_BASE}/api/extract-file`, {
@@ -1443,18 +1455,32 @@
           body: formData
         }, 45000);
 
-        const data = await res.json();
-        if (!data.success) throw new Error(data.error || 'Gagal membaca file');
+        let data;
+        try {
+          data = await res.json();
+        } catch (parseErr) {
+          // Server tidak balikin JSON (mis. HTML error page dari proxy/host)
+          throw new Error(`Server merespons tidak valid (status ${res.status}). Coba lagi beberapa saat.`);
+        }
+
+        if (!res.ok || !data.success) {
+          // Pakai pesan error ASLI dari backend, sertakan status code untuk debugging
+          throw new Error(data.error ? `${data.error} (status ${res.status})` : `Gagal membaca file (status ${res.status})`);
+        }
 
         document.getElementById('materiInput').value = data.text;
         fileNameDisplay.innerText = "✅ Berhasil diekstrak: " + file.name;
       } catch (err) {
         console.error('❌ Upload File Error:', err);
         fileNameDisplay.innerText = "❌ Gagal membaca file";
+
         if (err.message === 'TIMEOUT') {
           alert('Waktu unggah habis. Silakan coba lagi.');
+        } else if (err.message === 'AUTH_REQUIRED') {
+          alert('Sesi login tidak ditemukan. Silakan login dengan Google terlebih dahulu.');
         } else {
-          alert('File gagal diunggah. Pastikan file PDF/TXT dan ukurannya maksimal 10 MB.');
+          // Tampilkan pesan error ASLI, bukan asumsi generik soal ukuran file
+          alert(err.message || 'File gagal diunggah. Silakan coba lagi.');
         }
       } finally {
         isUploadingFile = false;
@@ -1694,8 +1720,8 @@
         }
       } finally {
         isAskingAI = false;
-        btnAsk.disabled = false;
         qInput.disabled = false;
+        btnAsk.disabled = false;
         btnAsk.innerText = 'Tanya';
       }
     }
