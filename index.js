@@ -13,7 +13,21 @@ import { createClient } from '@supabase/supabase-js';
 
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-const pdfParse = require('pdf-parse');
+
+// ============================================================
+// 🔧 FIX BUG: pdf-parse
+// Bug lama: `require('pdf-parse')` memicu "debug mode" bawaan
+// library ini (karena module.parent tidak ter-set saat di-require
+// lewat createRequire() di dalam file ESM). Debug mode itu mencoba
+// baca file test internal ('./test/data/05-versions-space.pdf')
+// yang TIDAK ADA di server produksi -> exception -> module.exports
+// pdf-parse tidak pernah ter-set jadi fungsi parser yang benar ->
+// SEMUA upload PDF gagal dengan error generik "Gagal membaca dokumen"
+// (500), berapa pun ukuran filenya.
+// Fix: require langsung file internal parser-nya (lib/pdf-parse.js),
+// skip wrapper index.js yang bermasalah itu.
+// ============================================================
+const pdfParse = require('pdf-parse/lib/pdf-parse.js');
 
 // Single Source of Truth untuk Model Gemini
 const GEMINI_MODEL = 'gemini-3.6-flash';
@@ -281,7 +295,7 @@ app.post('/api/extract-file', requireAuth, upload.single('file'), async (req, re
 
     res.json({ success: true, text: trimmedText });
   } catch (error) {
-    console.error('Error Extracting File');
+    console.error('Error Extracting File:', error?.message || error);
     if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
     res.status(500).json({ success: false, error: 'Gagal membaca dokumen' });
   }
