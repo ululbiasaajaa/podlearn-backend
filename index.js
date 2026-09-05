@@ -15,14 +15,19 @@ import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 
 // ============================================================
-// 🔧 FIX BUG: pdf-parse (Railway Crash & ESM Export Fix)
-// Safe loader agar tidak memicu ERR_PACKAGE_PATH_NOT_EXPORTED pada Node v20+
+// 🔧 SAFE PDF PARSER LOADER (ESM / Node v20+ Railway Fix)
+// Load core engine pdf-parse via CJS require untuk menghindari
+// ERR_PACKAGE_PATH_NOT_EXPORTED & debug mode crash.
 // ============================================================
-let pdfParse = null;
+let pdfParseCore = null;
 try {
-  pdfParse = require('pdf-parse');
+  pdfParseCore = require('pdf-parse/lib/pdf-parse.js');
 } catch (e) {
-  console.warn('⚠️ Standard pdf-parse require fallback active.');
+  try {
+    pdfParseCore = require('pdf-parse');
+  } catch (err) {
+    console.warn('⚠️ [PDF Parser] Gagal memuat library pdf-parse bawaan.');
+  }
 }
 
 // Single Source of Truth untuk Model Gemini
@@ -262,12 +267,15 @@ app.get('/api/health', (req, res) => {
   res.json({ success: true, status: 'ok', timestamp: new Date() });
 });
 
-// Endpoint Extract PDF / TXT (Protected)
+// Endpoint Extract PDF / TXT (Protected & Hardened Exception Handling)
 app.post('/api/extract-file', requireAuth, upload.single('file'), async (req, res) => {
+  let filePath = null;
   try {
-    if (!req.file) return res.status(400).json({ success: false, error: 'Tidak ada file yang diunggah' });
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'Tidak ada file yang diunggah' });
+    }
 
-    const filePath = req.file.path;
+    filePath = req.file.path;
     const fileMime = req.file.mimetype;
     const originalName = req.file.originalname.toLowerCase();
 
@@ -275,15 +283,27 @@ app.post('/api/extract-file', requireAuth, upload.single('file'), async (req, re
 
     if (originalName.endsWith('.pdf') || fileMime === 'application/pdf') {
       const dataBuffer = fs.readFileSync(filePath);
-      
-      let parser = pdfParse;
-      if (typeof parser !== 'function') {
-        const pdfModule = await import('pdf-parse/lib/pdf-parse.js').catch(() => null);
-        parser = pdfModule?.default || pdfModule || require('pdf-parse');
+
+      if (typeof pdfParseCore === 'function') {
+        try {
+          const pdfData = await pdfParseCore(dataBuffer);
+          extractedText = pdfData.text || '';
+        } catch (pdfErr) {
+          console.error('⚠️ [PDF Core Parse Error]:', pdfErr.message);
+        }
       }
 
-      const pdfData = await parser(dataBuffer);
-      extractedText = pdfData.text;
+      // Fallback ekstraksi darurat jika pdfParseCore bernilai null/gagal
+      if (!extractedText.trim()) {
+        const rawBufferStr = dataBuffer.toString('utf8');
+        const textMatches = rawBufferStr.match(/\(([^()]+)\)/g);
+        if (textMatches && textMatches.length > 0) {
+          extractedText = textMatches
+            .map(m => m.replace(/[()]/g, ''))
+            .filter(t => t.length > 3)
+            .join(' ');
+        }
+      }
     } else if (originalName.endsWith('.txt') || fileMime === 'text/plain') {
       extractedText = fs.readFileSync(filePath, 'utf8');
     } else {
@@ -292,15 +312,29 @@ app.post('/api/extract-file', requireAuth, upload.single('file'), async (req, re
     }
 
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+
     const trimmedText = extractedText.trim().substring(0, 8000);
 
-    if (!trimmedText) return res.status(400).json({ success: false, error: 'File kosong atau teks tidak terbaca.' });
+    if (!trimmedText) {
+      return res.status(400).json({
+        success: false,
+        error: 'PDF berupa scan gambar/kosong. Silakan gunakan dokumen berbasis teks.'
+      });
+    }
 
-    res.json({ success: true, text: trimmedText });
+    return res.json({ success: true, text: trimmedText });
+
   } catch (error) {
-    console.error('Error Extracting File:', error?.message || error);
-    if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
-    res.status(500).json({ success: false, error: 'Gagal membaca dokumen' });
+    console.error('❌ [Extract File Fatal Error]:', error);
+
+    if (filePath && fs.existsSync(filePath)) {
+      try { fs.unlinkSync(filePath); } catch (e) {}
+    }
+
+    return res.status(500).json({
+      success: false,
+      error: 'Gagal membaca dokumen. Pastikan file PDF/TXT tidak rusak.'
+    });
   }
 });
 
@@ -437,7 +471,7 @@ app.post('/api/generate-audio-segments', requireAuth, async (req, res) => {
 
   } catch (error) {
     console.error('❌ [Generate Audio Segments Error]');
-    
+
     createdTempFiles.forEach(f => {
       if (fs.existsSync(f)) {
         try { fs.unlinkSync(f); } catch (e) {}
