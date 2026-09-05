@@ -15,17 +15,10 @@ import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 
 // ============================================================
-// 🔧 FIX BUG: pdf-parse
-// Bug lama: `require('pdf-parse')` memicu "debug mode" bawaan
-// library ini (karena module.parent tidak ter-set saat di-require
-// lewat createRequire() di dalam file ESM). Debug mode itu mencoba
-// baca file test internal ('./test/data/05-versions-space.pdf')
-// yang TIDAK ADA di server produksi -> exception -> module.exports
-// pdf-parse tidak pernah ter-set jadi fungsi parser yang benar ->
-// SEMUA upload PDF gagal dengan error generik "Gagal membaca dokumen"
-// (500), berapa pun ukuran filenya.
-// Fix: require langsung file internal parser-nya (lib/pdf-parse.js),
-// skip wrapper index.js yang bermasalah itu.
+// 🔧 FIX BUG: pdf-parse (Railway Crash Fix)
+// Bypass index.js bawaan pdf-parse yang memicu 'debug mode' internal
+// dan mencari berkas test lokal yang tidak ada di server produksi.
+// Direct require ke lib/pdf-parse.js menyelesaikan masalah 500/crash.
 // ============================================================
 const pdfParse = require('pdf-parse/lib/pdf-parse.js');
 
