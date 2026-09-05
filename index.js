@@ -15,18 +15,17 @@ import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 
 // ============================================================
-// 🔧 SAFE PDF PARSER LOADER (ESM / Node v20+ Railway Fix)
-// Load core engine pdf-parse via CJS require untuk menghindari
-// ERR_PACKAGE_PATH_NOT_EXPORTED & debug mode crash.
+// 🔧 SAFE PDF PARSER (Node.js ESM Fix)
+// Menggunakan createRequire untuk memanggil lib/pdf-parse.js secara langsung
 // ============================================================
-let pdfParseCore = null;
+let pdfParse = null;
 try {
-  pdfParseCore = require('pdf-parse/lib/pdf-parse.js');
+  pdfParse = require('pdf-parse/lib/pdf-parse.js');
 } catch (e) {
   try {
-    pdfParseCore = require('pdf-parse');
+    pdfParse = require('pdf-parse');
   } catch (err) {
-    console.warn('⚠️ [PDF Parser] Gagal memuat library pdf-parse bawaan.');
+    console.error('❌ Gagal memuat library pdf-parse:', err.message);
   }
 }
 
@@ -267,7 +266,7 @@ app.get('/api/health', (req, res) => {
   res.json({ success: true, status: 'ok', timestamp: new Date() });
 });
 
-// Endpoint Extract PDF / TXT (Protected & Hardened Exception Handling)
+// Endpoint Extract PDF / TXT (Protected & Cleaned)
 app.post('/api/extract-file', requireAuth, upload.single('file'), async (req, res) => {
   let filePath = null;
   try {
@@ -282,28 +281,14 @@ app.post('/api/extract-file', requireAuth, upload.single('file'), async (req, re
     let extractedText = '';
 
     if (originalName.endsWith('.pdf') || fileMime === 'application/pdf') {
+      if (!pdfParse) {
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        return res.status(500).json({ success: false, error: 'Library PDF parser belum siap.' });
+      }
+
       const dataBuffer = fs.readFileSync(filePath);
-
-      if (typeof pdfParseCore === 'function') {
-        try {
-          const pdfData = await pdfParseCore(dataBuffer);
-          extractedText = pdfData.text || '';
-        } catch (pdfErr) {
-          console.error('⚠️ [PDF Core Parse Error]:', pdfErr.message);
-        }
-      }
-
-      // Fallback ekstraksi darurat jika pdfParseCore bernilai null/gagal
-      if (!extractedText.trim()) {
-        const rawBufferStr = dataBuffer.toString('utf8');
-        const textMatches = rawBufferStr.match(/\(([^()]+)\)/g);
-        if (textMatches && textMatches.length > 0) {
-          extractedText = textMatches
-            .map(m => m.replace(/[()]/g, ''))
-            .filter(t => t.length > 3)
-            .join(' ');
-        }
-      }
+      const pdfData = await pdfParse(dataBuffer);
+      extractedText = pdfData.text || '';
     } else if (originalName.endsWith('.txt') || fileMime === 'text/plain') {
       extractedText = fs.readFileSync(filePath, 'utf8');
     } else {
@@ -313,19 +298,23 @@ app.post('/api/extract-file', requireAuth, upload.single('file'), async (req, re
 
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 
-    const trimmedText = extractedText.trim().substring(0, 8000);
+    // Membersihkan karakter non-printable / binary liar
+    const cleanExtractedText = extractedText
+      .replace(/[\x00-\x09\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, ' ')
+      .trim()
+      .substring(0, 8000);
 
-    if (!trimmedText) {
+    if (!cleanExtractedText) {
       return res.status(400).json({
         success: false,
-        error: 'PDF berupa scan gambar/kosong. Silakan gunakan dokumen berbasis teks.'
+        error: 'File PDF berupa scan gambar atau tidak mengandung teks terbaca.'
       });
     }
 
-    return res.json({ success: true, text: trimmedText });
+    return res.json({ success: true, text: cleanExtractedText });
 
   } catch (error) {
-    console.error('❌ [Extract File Fatal Error]:', error);
+    console.error('❌ [Extract File Error]:', error.message || error);
 
     if (filePath && fs.existsSync(filePath)) {
       try { fs.unlinkSync(filePath); } catch (e) {}
@@ -333,7 +322,7 @@ app.post('/api/extract-file', requireAuth, upload.single('file'), async (req, re
 
     return res.status(500).json({
       success: false,
-      error: 'Gagal membaca dokumen. Pastikan file PDF/TXT tidak rusak.'
+      error: 'Gagal membaca dokumen. Pastikan PDF berisikan teks biasa dan tidak dilindungi sandi.'
     });
   }
 });
