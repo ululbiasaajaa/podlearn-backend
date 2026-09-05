@@ -16,58 +16,37 @@ const require = createRequire(import.meta.url);
 
 // ============================================================
 // 🔧 SAFE PDF PARSER (Node.js ESM Fix)
-// Menggunakan createRequire untuk memanggil lib/pdf-parse.js secara langsung
 //
-// 🔧 REVISI: sebelumnya hasil require() langsung dipakai sebagai function,
-// padahal tergantung versi package "pdf-parse" yang terpasang, module bisa
-// saja ter-export sebagai object (mis. { default: fn }) alih-alih function
-// langsung -- ini yang menyebabkan error runtime "pdfParse is not a function"
-// walau proses require()-nya sendiri tidak melempar error/exception.
-// Fix ini meng-unwrap ".default" bila hasil require bukan function,
-// lalu memvalidasi hasil akhirnya benar-benar callable.
+// 🔧 REVISI: package "pdf-parse" yang ter-install ternyata versi 2.x,
+// yang API-nya di-rewrite total oleh maintainer-nya dari function biasa
+// (v1: `pdf(buffer).then(...)`) menjadi CLASS based (v2):
+//
+//   const { PDFParse } = require('pdf-parse');
+//   const parser = new PDFParse({ data: buffer });
+//   const result = await parser.getText();
+//   console.log(result.text);
+//   await parser.destroy();
+//
+// Referensi resmi: https://www.npmjs.com/package/pdf-parse
+// Ini dikonfirmasi via diagnostic log sebelumnya: hasil require('pdf-parse')
+// adalah object berisi named export class "PDFParse" (beserta beberapa
+// class exception/table lain), bukan function langsung. Fix ini mengambil
+// class PDFParse tersebut secara eksplisit, bukan mencoba treat module-nya
+// sebagai function.
 // ============================================================
-function resolvePdfParseExport(mod) {
-  if (typeof mod === 'function') return mod;
-  if (mod && typeof mod.default === 'function') return mod.default;
-  return null;
-}
-
-let pdfParse = null;
-let pdfParseRawModule = null;
+let PDFParseClass = null;
 
 try {
-  pdfParseRawModule = require('pdf-parse/lib/pdf-parse.js');
-  pdfParse = resolvePdfParseExport(pdfParseRawModule);
-} catch (e) {
-  // lanjut ke fallback di bawah
+  const mod = require('pdf-parse');
+  PDFParseClass = (mod && typeof mod.PDFParse === 'function')
+    ? mod.PDFParse
+    : (typeof mod === 'function' ? mod : null); // fallback jaga-jaga andai suatu saat rollback ke v1
+} catch (err) {
+  console.error('❌ Gagal memuat library pdf-parse:', err.message);
 }
 
-if (!pdfParse) {
-  try {
-    pdfParseRawModule = require('pdf-parse');
-    pdfParse = resolvePdfParseExport(pdfParseRawModule);
-  } catch (err) {
-    console.error('❌ Gagal memuat library pdf-parse:', err.message);
-  }
-}
-
-if (!pdfParse) {
-  // 🔍 DIAGNOSTIC: cetak bentuk asli module pdf-parse yang ter-require,
-  // biar ketahuan persis struktur export-nya seperti apa (nama package
-  // "pdf-parse" punya versi lama berbasis function biasa dan versi baru
-  // (v2.x) berbasis class dengan API yang sama sekali berbeda).
-  console.error('❌ Module pdf-parse berhasil di-require tapi bukan function yang valid (kemungkinan struktur export package berbeda dari yang diharapkan). Cek versi "pdf-parse" di package.json.');
-  try {
-    console.error('🔍 [PDF Parse Diagnostic] typeof module:', typeof pdfParseRawModule);
-    console.error('🔍 [PDF Parse Diagnostic] Object.keys(module):', pdfParseRawModule ? Object.keys(pdfParseRawModule) : 'null/undefined');
-    if (pdfParseRawModule && typeof pdfParseRawModule === 'object') {
-      for (const key of Object.keys(pdfParseRawModule)) {
-        console.error(`🔍 [PDF Parse Diagnostic] typeof module.${key}:`, typeof pdfParseRawModule[key]);
-      }
-    }
-  } catch (diagErr) {
-    console.error('🔍 [PDF Parse Diagnostic] Gagal introspeksi module:', diagErr.message);
-  }
+if (!PDFParseClass) {
+  console.error('❌ Class PDFParse tidak ditemukan di package "pdf-parse". Cek versi package yang ter-install.');
 }
 
 // Single Source of Truth untuk Model Gemini
@@ -322,24 +301,32 @@ app.post('/api/extract-file', requireAuth, upload.single('file'), async (req, re
     let extractedText = '';
 
     if (originalName.endsWith('.pdf') || fileMime === 'application/pdf') {
-      if (!pdfParse) {
+      if (!PDFParseClass) {
         if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
         return res.status(500).json({ success: false, error: 'Library PDF parser belum siap.' });
       }
 
       const dataBuffer = fs.readFileSync(filePath);
 
-      // 🔧 REVISI: try-catch khusus parsing PDF, biar error ASLI dari pdf-parse
-      // (nama, message, stack) kelihatan di log Railway, bukan cuma ketutup
-      // sama pesan generik di catch paling luar.
+      // 🔧 REVISI: pakai API "pdf-parse" v2 yang class-based (bukan lagi
+      // function biasa seperti v1). try-catch khusus parsing PDF tetap
+      // dipertahankan biar error ASLI dari pdf-parse (nama, message, stack)
+      // kelihatan di log Railway, bukan cuma ketutup sama pesan generik
+      // di catch paling luar.
+      let parser = null;
       try {
-        const pdfData = await pdfParse(dataBuffer);
-        extractedText = pdfData.text || '';
+        parser = new PDFParseClass({ data: dataBuffer });
+        const result = await parser.getText();
+        extractedText = result.text || '';
       } catch (parseErr) {
         console.error('❌ [PDF Parse Error] name:', parseErr?.name);
         console.error('❌ [PDF Parse Error] message:', parseErr?.message);
         console.error('❌ [PDF Parse Error] stack:', parseErr?.stack);
         throw parseErr; // tetap dilempar ke catch luar agar response ke client tidak berubah
+      } finally {
+        if (parser && typeof parser.destroy === 'function') {
+          try { await parser.destroy(); } catch (destroyErr) {}
+        }
       }
     } else if (originalName.endsWith('.txt') || fileMime === 'text/plain') {
       extractedText = fs.readFileSync(filePath, 'utf8');
