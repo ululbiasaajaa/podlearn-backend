@@ -33,22 +33,41 @@ function resolvePdfParseExport(mod) {
 }
 
 let pdfParse = null;
+let pdfParseRawModule = null;
+
 try {
-  pdfParse = resolvePdfParseExport(require('pdf-parse/lib/pdf-parse.js'));
+  pdfParseRawModule = require('pdf-parse/lib/pdf-parse.js');
+  pdfParse = resolvePdfParseExport(pdfParseRawModule);
 } catch (e) {
   // lanjut ke fallback di bawah
 }
 
 if (!pdfParse) {
   try {
-    pdfParse = resolvePdfParseExport(require('pdf-parse'));
+    pdfParseRawModule = require('pdf-parse');
+    pdfParse = resolvePdfParseExport(pdfParseRawModule);
   } catch (err) {
     console.error('❌ Gagal memuat library pdf-parse:', err.message);
   }
 }
 
 if (!pdfParse) {
+  // 🔍 DIAGNOSTIC: cetak bentuk asli module pdf-parse yang ter-require,
+  // biar ketahuan persis struktur export-nya seperti apa (nama package
+  // "pdf-parse" punya versi lama berbasis function biasa dan versi baru
+  // (v2.x) berbasis class dengan API yang sama sekali berbeda).
   console.error('❌ Module pdf-parse berhasil di-require tapi bukan function yang valid (kemungkinan struktur export package berbeda dari yang diharapkan). Cek versi "pdf-parse" di package.json.');
+  try {
+    console.error('🔍 [PDF Parse Diagnostic] typeof module:', typeof pdfParseRawModule);
+    console.error('🔍 [PDF Parse Diagnostic] Object.keys(module):', pdfParseRawModule ? Object.keys(pdfParseRawModule) : 'null/undefined');
+    if (pdfParseRawModule && typeof pdfParseRawModule === 'object') {
+      for (const key of Object.keys(pdfParseRawModule)) {
+        console.error(`🔍 [PDF Parse Diagnostic] typeof module.${key}:`, typeof pdfParseRawModule[key]);
+      }
+    }
+  } catch (diagErr) {
+    console.error('🔍 [PDF Parse Diagnostic] Gagal introspeksi module:', diagErr.message);
+  }
 }
 
 // Single Source of Truth untuk Model Gemini
