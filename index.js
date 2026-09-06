@@ -119,7 +119,8 @@ async function requireAuth(req, res, next) {
     req.supabase = createUserClient(accessToken);
     next();
   } catch (error) {
-    console.error('❌ Authentication Middleware Error');
+    console.error('❌ [Authentication Middleware Error] message:', error?.message);
+    console.error('❌ [Authentication Middleware Error] stack:', error?.stack);
     return res.status(401).json({ success: false, error: 'Authentication gagal.' });
   }
 }
@@ -169,7 +170,8 @@ setInterval(() => {
       }
     });
   } catch (err) {
-    console.error('❌ [Cleanup Error]: Gagal membersihkan temp files');
+    console.error('❌ [Cleanup Error] message:', err?.message);
+    console.error('❌ [Cleanup Error] stack:', err?.stack);
   }
 }, 10 * 60 * 1000);
 
@@ -489,7 +491,8 @@ ${cleanText}
       data: parsedData,
     });
   } catch (error) {
-    console.error('❌ Error Generating Script');
+    console.error('❌ [Generate Script Error] message:', error?.message);
+    console.error('❌ [Generate Script Error] stack:', error?.stack);
     res.status(500).json({ success: false, error: 'Gagal membuat naskah podcast' });
   }
 });
@@ -586,7 +589,8 @@ app.post('/api/generate-audio-segments', requireAuth, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ [Generate Audio Segments Error]');
+    console.error('❌ [Generate Audio Segments Error] message:', error?.message);
+    console.error('❌ [Generate Audio Segments Error] stack:', error?.stack);
 
     createdTempFiles.forEach(f => {
       if (fs.existsSync(f)) {
