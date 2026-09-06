@@ -317,8 +317,18 @@ async function checkAndLogUsage(userSupabase, userId, actionType) {
   if (countError) {
     // Kalau gagal cek usage (misal tabel belum ke-migrate), fail-open
     // (tetap izinkan) supaya bug di sistem tracking tidak mem-blokir
-    // fungsi utama aplikasi. Tapi log jelas biar ketahuan di Railway.
-    console.error('❌ [Usage Check Error]:', countError.message);
+    // fungsi utama aplikasi.
+    //
+    // 🔍 DIAGNOSTIC: sebelumnya cuma log countError.message, tapi ternyata
+    // kosong -- kemungkinan besar bentuk error object dari Supabase/PostgREST
+    // beda dari yang diasumsikan (bukan Error biasa). Log lebih lengkap
+    // (code, details, hint, dan full JSON) biar akar masalahnya ketahuan
+    // pasti, bukan nebak lagi.
+    console.error('❌ [Usage Check Error] code:', countError.code);
+    console.error('❌ [Usage Check Error] message:', countError.message);
+    console.error('❌ [Usage Check Error] details:', countError.details);
+    console.error('❌ [Usage Check Error] hint:', countError.hint);
+    console.error('❌ [Usage Check Error] full JSON:', JSON.stringify(countError));
     return { allowed: true, currentCount: 0, limit: dailyLimit };
   }
 
@@ -332,7 +342,10 @@ async function checkAndLogUsage(userSupabase, userId, actionType) {
     .insert([{ user_id: userId, action_type: actionType }]);
 
   if (insertError) {
-    console.error('❌ [Usage Log Insert Error]:', insertError.message);
+    console.error('❌ [Usage Log Insert Error] code:', insertError.code);
+    console.error('❌ [Usage Log Insert Error] message:', insertError.message);
+    console.error('❌ [Usage Log Insert Error] details:', insertError.details);
+    console.error('❌ [Usage Log Insert Error] hint:', insertError.hint);
   }
 
   return { allowed: true, currentCount: currentCount + 1, limit: dailyLimit };
