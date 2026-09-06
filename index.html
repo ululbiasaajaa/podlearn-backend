@@ -1490,6 +1490,16 @@
       }
     }
 
+    // ================================================================
+    // 🔧 REVISI: processPodcast
+    // Bug lama: catch block SELALU menampilkan pesan generik
+    // "Naskah atau audio gagal dibuat" untuk semua jenis error selain
+    // AUTH_EXPIRED/TIMEOUT -- termasuk pesan rate-limit (429) yang
+    // sengaja dirancang informatif dari backend (mis. "Batas harian
+    // tercapai (5/5) ..."), jadi user gak pernah lihat pesan itu.
+    // Fix: fallback ke err.message ASLI kalau bukan salah satu sentinel
+    // value (AUTH_EXPIRED/TIMEOUT) yang memang butuh pesan khusus.
+    // ================================================================
     async function processPodcast() {
       if (isProcessingPodcast) return;
 
@@ -1584,7 +1594,8 @@
         } else if (err.message === 'TIMEOUT') {
           alert('Waktu pemrosesan habis. Silakan coba lagi.');
         } else {
-          alert('Naskah atau audio gagal dibuat. Silakan coba lagi.');
+          // Tampilkan pesan error ASLI dari backend (termasuk pesan rate-limit 429)
+          alert(err.message || 'Naskah atau audio gagal dibuat. Silakan coba lagi.');
         }
       } finally {
         isProcessingPodcast = false;
@@ -1668,6 +1679,12 @@
       });
     }
 
+    // ================================================================
+    // 🔧 REVISI: askTutorAI
+    // Sama seperti processPodcast -- tampilkan pesan error ASLI dari
+    // backend (termasuk pesan rate-limit 429 "Batas harian tanya Tutor
+    // AI tercapai...") alih-alih pesan generik.
+    // ================================================================
     async function askTutorAI() {
       if (isAskingAI) return;
 
@@ -1716,7 +1733,8 @@
         } else if (err.message === 'TIMEOUT') {
           answerText.innerText = '❌ Waktu permintaan habis. Silakan coba lagi.';
         } else {
-          answerText.innerText = '❌ Jawaban AI gagal dimuat. Silakan coba lagi.';
+          // Tampilkan pesan error ASLI dari backend (termasuk pesan rate-limit 429)
+          answerText.innerText = '❌ ' + (err.message || 'Jawaban AI gagal dimuat. Silakan coba lagi.');
         }
       } finally {
         isAskingAI = false;
@@ -1726,6 +1744,13 @@
       }
     }
 
+    // ================================================================
+    // 🔧 REVISI: downloadFullPodcast
+    // Sama seperti processPodcast/askTutorAI -- endpoint ini balikin
+    // JSON (bukan langsung file) kalau gagal (termasuk rate-limit 429),
+    // jadi perlu cek content-type dulu sebelum treat response sebagai
+    // blob MP3, supaya pesan error ASLI dari backend bisa ditampilkan.
+    // ================================================================
     async function downloadFullPodcast() {
       if (isDownloadingMP3) return;
 
@@ -1743,7 +1768,14 @@
           body: JSON.stringify({ podcast_script: currentPodcastScript })
         }, 180000);
 
-        if (!res.ok) throw new Error('Gagal membuat full podcast MP3');
+        if (!res.ok) {
+          const contentType = res.headers.get('content-type') || '';
+          if (contentType.includes('application/json')) {
+            const errData = await res.json();
+            throw new Error(errData.error || 'Gagal membuat full podcast MP3');
+          }
+          throw new Error('Gagal membuat full podcast MP3');
+        }
 
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
@@ -1759,7 +1791,8 @@
         } else if (err.message === 'TIMEOUT') {
           alert('Waktu penggabungan audio habis. Silakan coba lagi.');
         } else {
-          alert('Audio gagal dibuat. Silakan coba lagi.');
+          // Tampilkan pesan error ASLI dari backend (termasuk pesan rate-limit 429)
+          alert(err.message || 'Audio gagal dibuat. Silakan coba lagi.');
         }
       } finally {
         isDownloadingMP3 = false;

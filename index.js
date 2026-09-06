@@ -273,6 +273,72 @@ function getContextForQuestion(podcastScript, currentIndex) {
 }
 
 // ============================================================
+// 📊 USAGE TRACKING & RATE LIMITING (Milestone 16)
+// ============================================================
+
+// Limit harian per-user, bisa dioverride lewat environment variable
+// biar gampang diubah tanpa perlu redeploy kode (cukup restart env var di Railway)
+const DAILY_LIMITS = {
+  create_podcast: parseInt(process.env.DAILY_LIMIT_CREATE_PODCAST || '5', 10),
+  ask_question: parseInt(process.env.DAILY_LIMIT_ASK_QUESTION || '20', 10),
+  download_full_podcast: parseInt(process.env.DAILY_LIMIT_DOWNLOAD_FULL || '5', 10)
+};
+
+/**
+ * Cek apakah user masih dalam batas harian untuk actionType tertentu.
+ * Kalau masih di bawah limit, langsung catat log usage-nya (insert row)
+ * dan return { allowed: true }.
+ * Kalau sudah kena limit, TIDAK insert log baru, return { allowed: false }.
+ *
+ * Dicatat SEBELUM proses mahal (Gemini/TTS/FFmpeg) dijalankan, bukan
+ * sesudahnya -- supaya kalaupun proses di tengah jalan gagal/timeout,
+ * user tetap "kena charge" 1 usage. Ini trade-off sengaja: lebih aman
+ * buat proteksi cost daripada precise buat UX (user bisa komplain
+ * "gagal tapi kepotong limit" -- itu risiko yang lebih baik daripada
+ * limit gampang dilewatin lewat request yang sengaja di-abort).
+ */
+async function checkAndLogUsage(userSupabase, userId, actionType) {
+  const dailyLimit = DAILY_LIMITS[actionType];
+  if (!dailyLimit) {
+    // actionType tidak dikenali -> jangan block, tapi jangan diam-diam juga
+    console.warn(`⚠️ [Usage] actionType tidak dikenal: ${actionType}`);
+    return { allowed: true, currentCount: 0, limit: null };
+  }
+
+  const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+  const { count, error: countError } = await userSupabase
+    .from('usage_logs')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('action_type', actionType)
+    .gte('created_at', twentyFourHoursAgo);
+
+  if (countError) {
+    // Kalau gagal cek usage (misal tabel belum ke-migrate), fail-open
+    // (tetap izinkan) supaya bug di sistem tracking tidak mem-blokir
+    // fungsi utama aplikasi. Tapi log jelas biar ketahuan di Railway.
+    console.error('❌ [Usage Check Error]:', countError.message);
+    return { allowed: true, currentCount: 0, limit: dailyLimit };
+  }
+
+  const currentCount = count || 0;
+  if (currentCount >= dailyLimit) {
+    return { allowed: false, currentCount, limit: dailyLimit };
+  }
+
+  const { error: insertError } = await userSupabase
+    .from('usage_logs')
+    .insert([{ user_id: userId, action_type: actionType }]);
+
+  if (insertError) {
+    console.error('❌ [Usage Log Insert Error]:', insertError.message);
+  }
+
+  return { allowed: true, currentCount: currentCount + 1, limit: dailyLimit };
+}
+
+// ============================================================
 // 💬 FEEDBACK SYSTEM DICTIONARY & HELPERS (Milestone 15)
 // ============================================================
 const FEEDBACK_QUESTIONS = {
@@ -372,6 +438,15 @@ app.post('/api/generate-script', requireAuth, async (req, res) => {
     const { text } = req.body;
     if (!text || typeof text !== 'string' || !text.trim()) {
       return res.status(400).json({ success: false, error: 'Teks materi tidak boleh kosong' });
+    }
+
+    // 📊 Rate limit check: batasi jumlah podcast baru per-hari per-user
+    const usageCheck = await checkAndLogUsage(req.supabase, req.user.id, 'create_podcast');
+    if (!usageCheck.allowed) {
+      return res.status(429).json({
+        success: false,
+        error: `Batas harian tercapai (${usageCheck.currentCount}/${usageCheck.limit} podcast hari ini). Coba lagi besok ya!`
+      });
     }
 
     const cleanText = text.trim().substring(0, 12000);
@@ -530,6 +605,16 @@ app.post('/api/generate-full-podcast', requireAuth, async (req, res) => {
       return res.status(400).json({ success: false, error: 'Array podcast_script wajib diisi!' });
     }
 
+    // 📊 Rate limit check: batasi jumlah download full podcast per-hari per-user
+    // (endpoint ini paling mahal -- TTS ulang semua segmen + FFmpeg merge)
+    const usageCheck = await checkAndLogUsage(req.supabase, req.user.id, 'download_full_podcast');
+    if (!usageCheck.allowed) {
+      return res.status(429).json({
+        success: false,
+        error: `Batas harian download full podcast tercapai (${usageCheck.currentCount}/${usageCheck.limit} hari ini). Coba lagi besok ya!`
+      });
+    }
+
     for (let i = 0; i < podcast_script.length; i++) {
       const item = podcast_script[i];
       if (!item || !item.text) continue;
@@ -597,6 +682,15 @@ app.post('/api/ask-question', requireAuth, async (req, res) => {
 
     if (typeof currentIndex !== 'number' || !podcastScript) {
       return res.status(400).json({ success: false, error: 'Parameter currentIndex dan podcastScript wajib diisi' });
+    }
+
+    // 📊 Rate limit check: batasi jumlah pertanyaan ke Tutor AI per-hari per-user
+    const usageCheck = await checkAndLogUsage(req.supabase, req.user.id, 'ask_question');
+    if (!usageCheck.allowed) {
+      return res.status(429).json({
+        success: false,
+        error: `Batas harian tanya Tutor AI tercapai (${usageCheck.currentCount}/${usageCheck.limit} hari ini). Coba lagi besok ya!`
+      });
     }
 
     const contextSegments = getContextForQuestion(podcastScript, currentIndex);
