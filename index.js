@@ -250,12 +250,34 @@ async function callGeminiWithRetry(prompt, options = {}, retries) {
     } catch (error) {
       const isRateLimit = error?.status === 429 || error?.message?.includes('429');
 
+      // 🔧 FIX: error 503 (model overload / status "UNAVAILABLE") sebelumnya
+      // TIDAK PERNAH di-retry -- langsung throw di percobaan pertama walau
+      // maxRetries masih banyak sisa. Padahal ini error transient (pesannya
+      // sendiri bilang "Please try again later"). Sekarang di-retry dengan
+      // exponential backoff (2s, 4s, 8s, 16s, ... dibatasi max 20s), tanpa
+      // perlu rotate key karena ini bukan soal quota/rate limit per-key,
+      // tapi server Gemini-nya sendiri yang lagi penuh.
+      const isOverloaded =
+        error?.status === 503 ||
+        error?.message?.includes('503') ||
+        error?.message?.includes('UNAVAILABLE') ||
+        error?.message?.includes('overloaded') ||
+        error?.message?.includes('high demand');
+
       if (isRateLimit) {
         rotateKey();
         if ((i + 1) % apiKeys.length === 0) {
           const waitTime = 15000 + (i * 2000);
           await new Promise(r => setTimeout(r, waitTime));
         }
+      } else if (isOverloaded) {
+        const isLastAttempt = i === maxRetries - 1;
+        if (isLastAttempt) {
+          throw error;
+        }
+        const backoffMs = Math.min(2000 * Math.pow(2, i), 20000);
+        console.warn(`⚠️ [Gemini Overload] Percobaan ${i + 1}/${maxRetries} gagal (503), retry dalam ${backoffMs}ms...`);
+        await new Promise(r => setTimeout(r, backoffMs));
       } else {
         throw error;
       }
