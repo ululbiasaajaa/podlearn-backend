@@ -289,6 +289,45 @@
       opacity: 0.3;
     }
 
+    /* ---------- Depth Selector (Milestone 16) ---------- */
+    .depth-selector {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .depth-option {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 12px 14px;
+      border: 2px solid var(--ink-soft);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      background: var(--paper);
+      transition: border-color 0.12s ease, background 0.12s ease;
+    }
+    .depth-option:has(input:checked) {
+      border-color: var(--accent-secondary);
+      background: var(--tint-secondary);
+    }
+    .depth-option input[type="radio"] {
+      margin-top: 3px;
+      flex-shrink: 0;
+      accent-color: var(--accent-secondary);
+      width: 16px;
+      height: 16px;
+    }
+    .depth-option-title {
+      font-weight: 800;
+      font-size: 0.9rem;
+    }
+    .depth-option-desc {
+      font-size: 0.78rem;
+      color: var(--ink-soft);
+      font-weight: 600;
+      margin-top: 2px;
+    }
+
     /* ---------- Buttons ---------- */
     .btn {
       display: inline-flex;
@@ -729,6 +768,34 @@
         <textarea id="materiInput" rows="5" placeholder="Contoh: Manusia butuh tidur 7-8 jam sehari untuk menjaga memori otak dan imunitas tubuh..."></textarea>
       </div>
 
+      <!-- 🎚️ MILESTONE 16: Podcast Depth Control -->
+      <div style="margin-top: 18px;">
+        <label class="field-label">Seberapa lengkap kamu ingin materi ini dijelaskan?</label>
+        <div id="depthSelector" class="depth-selector">
+          <label class="depth-option">
+            <input type="radio" name="depthOption" value="concise">
+            <span>
+              <span class="depth-option-title">Ringkas</span>
+              <span class="depth-option-desc">Fokus pada konsep dan poin utama.</span>
+            </span>
+          </label>
+          <label class="depth-option">
+            <input type="radio" name="depthOption" value="balanced" checked>
+            <span>
+              <span class="depth-option-title">Standar ⭐</span>
+              <span class="depth-option-desc">Penjelasan seimbang tanpa terlalu melebar.</span>
+            </span>
+          </label>
+          <label class="depth-option">
+            <input type="radio" name="depthOption" value="deep">
+            <span>
+              <span class="depth-option-title">Mendalam</span>
+              <span class="depth-option-desc">Bahas konsep, hubungan antar-topik, dan detail penting.</span>
+            </span>
+          </label>
+        </div>
+      </div>
+
       <div style="margin-top: 18px;">
         <button id="btnGenerate" onclick="processPodcast()" class="btn btn-primary btn-block">
           🚀 Buat Podcast Interaktif & Kuis
@@ -1028,7 +1095,7 @@
       try {
         const { data, error } = await supabaseClient
           .from('podcasts')
-          .select('id, title, created_at, podcast_script, audio_segments, quiz_data, source_text, last_segment_index, is_completed')
+          .select('id, title, created_at, podcast_script, audio_segments, quiz_data, source_text, last_segment_index, is_completed, depth')
           .eq('user_id', currentUserSession.user.id)
           .order('created_at', { ascending: false });
 
@@ -1218,7 +1285,10 @@
       }
     }
 
-    async function createInitialPodcastRecord(title, sourceText, script, quiz) {
+    // 🎚️ MILESTONE 16: createInitialPodcastRecord sekarang menerima parameter
+    // `depth` dan menyimpannya ke kolom `depth` di tabel `podcasts` -- ini
+    // fondasi buat analytics/kalibrasi durasi di masa depan (lihat Step 5/6).
+    async function createInitialPodcastRecord(title, sourceText, script, quiz, depth) {
       if (!currentUserSession || !currentUserSession.user) return null;
 
       const { data, error } = await supabaseClient
@@ -1231,6 +1301,7 @@
             podcast_script: script,
             audio_segments: [],
             quiz_data: quiz,
+            depth: depth || 'balanced',
             last_segment_index: 0,
             is_completed: false
           }
@@ -1490,6 +1561,19 @@
       }
     }
 
+    // 🎚️ MILESTONE 16: baca pilihan depth dari radio button.
+    // Fallback ke 'balanced' kalau entah kenapa tidak ada yang ke-check.
+    function getSelectedDepth() {
+      const checked = document.querySelector('input[name="depthOption"]:checked');
+      return checked ? checked.value : 'balanced';
+    }
+
+    function setDepthSelectorDisabled(disabled) {
+      document.querySelectorAll('input[name="depthOption"]').forEach(input => {
+        input.disabled = disabled;
+      });
+    }
+
     // ================================================================
     // 🔧 REVISI: processPodcast
     // Bug lama: catch block SELALU menampilkan pesan generik
@@ -1499,6 +1583,10 @@
     // tercapai (5/5) ..."), jadi user gak pernah lihat pesan itu.
     // Fix: fallback ke err.message ASLI kalau bukan salah satu sentinel
     // value (AUTH_EXPIRED/TIMEOUT) yang memang butuh pesan khusus.
+    //
+    // 🎚️ MILESTONE 16: sekarang juga mengirim `depth` yang dipilih user
+    // ke /api/generate-script, dan menyimpan depth (dari response backend,
+    // bukan nebak ulang dari frontend) ke record podcast di DB.
     // ================================================================
     async function processPodcast() {
       if (isProcessingPodcast) return;
@@ -1506,6 +1594,8 @@
       const textInput = document.getElementById('materiInput');
       const text = textInput.value.trim();
       if (!text) return alert('Silakan isi teks materi terlebih dahulu atau unggah file PDF/TXT!');
+
+      const selectedDepth = getSelectedDepth();
 
       isProcessingPodcast = true;
       const btn = document.getElementById('btnGenerate');
@@ -1516,6 +1606,7 @@
 
       btn.disabled = true;
       textInput.disabled = true;
+      setDepthSelectorDisabled(true);
       loading.classList.remove('hidden');
       result.classList.add('hidden');
       document.getElementById('tutorAnswerBox').classList.remove('show');
@@ -1534,13 +1625,13 @@
         const scriptRes = await fetchWithTimeout(`${API_BASE}/api/generate-script`, {
           method: 'POST',
           headers,
-          body: JSON.stringify({ text })
+          body: JSON.stringify({ text, depth: selectedDepth })
         }, 60000);
         const scriptData = await scriptRes.json();
 
         if (!scriptData.success) throw new Error(scriptData.error || 'Gagal generate naskah');
 
-        const { podcast_script, quiz } = scriptData.data;
+        const { podcast_script, quiz, depth: resolvedDepth } = scriptData.data;
         currentPodcastScript = podcast_script;
         currentQuizData = quiz;
 
@@ -1552,7 +1643,8 @@
             'Podcast ' + new Date().toLocaleDateString('id-ID'),
             text,
             currentPodcastScript,
-            currentQuizData
+            currentQuizData,
+            resolvedDepth || selectedDepth
           );
           currentActivePodcastId = createdDbPodcastId;
         }
@@ -1601,6 +1693,7 @@
         isProcessingPodcast = false;
         btn.disabled = false;
         textInput.disabled = false;
+        setDepthSelectorDisabled(false);
         loading.classList.add('hidden');
       }
     }

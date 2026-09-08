@@ -198,16 +198,25 @@ function rotateKey() {
 }
 
 async function callGeminiWithRetry(prompt, options = {}, retries) {
-  const { useSchema = false } = options;
+  // 🔧 MILESTONE 16: tambah opsi maxOutputTokens eksplisit.
+  // Sebelumnya field ini TIDAK PERNAH di-set, murni default API.
+  // Ini penting terutama untuk mode "Deep" yang bisa menghasilkan naskah
+  // jauh lebih panjang -- tanpa batas eksplisit yang cukup besar, ada
+  // risiko output ke-truncate di tengah sebelum JSON-nya closed dengan
+  // benar, yang akan bikin JSON.parse(rawText) di endpoint gagal diam-diam
+  // (gagal karena truncation, bukan karena kontennya emang segitu).
+  const { useSchema = false, maxOutputTokens } = options;
   const maxRetries = retries || apiKeys.length * 2;
 
   for (let i = 0; i < maxRetries; i++) {
     try {
       const client = getAiClient();
 
-      const config = useSchema ? {
-        responseMimeType: 'application/json',
-        responseSchema: {
+      const config = {};
+
+      if (useSchema) {
+        config.responseMimeType = 'application/json';
+        config.responseSchema = {
           type: 'OBJECT',
           properties: {
             podcast_script: {
@@ -238,13 +247,17 @@ async function callGeminiWithRetry(prompt, options = {}, retries) {
             }
           },
           required: ['podcast_script', 'quiz']
-        }
-      } : undefined;
+        };
+      }
+
+      if (maxOutputTokens) {
+        config.maxOutputTokens = maxOutputTokens;
+      }
 
       const response = await client.models.generateContent({
         model: GEMINI_MODEL,
         contents: prompt,
-        ...(config && { config })
+        ...(Object.keys(config).length > 0 && { config })
       });
       return response;
     } catch (error) {
@@ -286,6 +299,49 @@ async function callGeminiWithRetry(prompt, options = {}, retries) {
 
   throw new Error('Semua percobaan gagal setelah rotasi key + retry.');
 }
+
+// ============================================================
+// 🎚️ MILESTONE 16 — PODCAST DEPTH CONTROL
+// ============================================================
+
+// Step 2: whitelist depth yang valid. Backend TIDAK PERNAH percaya
+// value depth dari frontend mentah-mentah -- kalau kosong/typo/nilai
+// aneh, fallback ke 'balanced'.
+const VALID_DEPTHS = ['concise', 'balanced', 'deep'];
+
+// Step 3: kontrak per depth. Ini BUKAN sekadar "buat lebih panjang/pendek",
+// tapi instruksi struktural yang beda cara menjelaskan -- supaya yang
+// diuji adalah depth (cara membahas), bukan cuma verbosity (panjang teks).
+const DEPTH_INSTRUCTIONS = {
+  concise: `
+MODE PEMBAHASAN: RINGKAS
+- Prioritaskan konsep inti dan poin utama saja.
+- Buang detail sekunder, contoh tambahan, atau elaborasi yang tidak esensial.
+- Percakapan tetap harus terasa natural, bukan sekadar dipotong paksa.
+- Hindari mengulang poin yang sudah disampaikan.`,
+  balanced: `
+MODE PEMBAHASAN: STANDAR
+- Jelaskan konsep utama secara lengkap dan jelas.
+- Berikan konteks dan contoh yang relevan secukupnya untuk membantu pemahaman.
+- Jaga pembahasan tetap fokus pada materi, jangan melebar ke topik yang tidak terkait.`,
+  deep: `
+MODE PEMBAHASAN: MENDALAM
+- Cover materi secara lebih menyeluruh, termasuk sub-topik yang relevan.
+- Jelaskan hubungan antar-konsep, bukan cuma membahas satu-satu secara terpisah.
+- Sertakan konteks, mekanisme/cara kerja, contoh konkret, dan detail penting lain.
+- JANGAN menambahkan fakta yang tidak didukung materi sumber (dilarang mengarang).
+- JANGAN mengulang-ulang poin yang sama hanya untuk menambah panjang naskah --
+  setiap kalimat baru wajib membawa informasi baru.`
+};
+
+// Batas token output per depth. Nilai untuk 'deep' sengaja dikasih ruang
+// paling besar supaya naskah panjang + hubungan antar-konsep + 10 soal
+// kuis tetap muat dalam satu response JSON tanpa ke-truncate.
+const MAX_OUTPUT_TOKENS_BY_DEPTH = {
+  concise: 4096,
+  balanced: 6144,
+  deep: 8192
+};
 
 function getContextForQuestion(podcastScript, currentIndex) {
   if (!Array.isArray(podcastScript) || podcastScript.length === 0) return [];
@@ -477,6 +533,11 @@ app.post('/api/generate-script', requireAuth, async (req, res) => {
       return res.status(400).json({ success: false, error: 'Teks materi tidak boleh kosong' });
     }
 
+    // 🎚️ Step 2: defensive validation. Frontend cuma boleh kirim enum,
+    // BUKAN instruksi prompt mentah. Kalau value-nya invalid/kosong/typo,
+    // fallback diam-diam ke 'balanced' -- backend yang menentukan aturan.
+    const depth = VALID_DEPTHS.includes(req.body.depth) ? req.body.depth : 'balanced';
+
     // 📊 Rate limit check: batasi jumlah podcast baru per-hari per-user
     const usageCheck = await checkAndLogUsage(req.supabase, req.user.id, 'create_podcast');
     if (!usageCheck.allowed) {
@@ -488,10 +549,14 @@ app.post('/api/generate-script', requireAuth, async (req, res) => {
 
     const cleanText = text.trim().substring(0, 12000);
 
+    // Step 4: jumlah kuis TETAP 10 di semua mode depth -- ini sengaja
+    // dikunci biar eksperimen depth clean (variabel yang berubah cuma
+    // naskahnya, bukan ikut jumlah kuisnya).
     const prompt = `
 Ubah materi berikut menjadi naskah podcast percakapan 2 orang:
 1. "Rian" (Host Cowok yang santai, penasaran, dan bertanya).
 2. "Maya" (Expert Cewek yang menjelaskan pakai analogi sederhana dan ramah).
+${DEPTH_INSTRUCTIONS[depth]}
 
 Sertakan juga TEPAT 10 soal kuis pilihan ganda yang komprehensif berdasarkan materi tersebut.
 
@@ -504,13 +569,31 @@ Materi:
 ${cleanText}
 `;
 
-    const response = await callGeminiWithRetry(prompt, { useSchema: true });
+    const response = await callGeminiWithRetry(prompt, {
+      useSchema: true,
+      maxOutputTokens: MAX_OUTPUT_TOKENS_BY_DEPTH[depth]
+    });
     const rawText = response.text || '';
     const parsedData = JSON.parse(rawText);
 
+    // 📊 Step 5: logging metrik depth -- fondasi buat eksperimen &
+    // kalibrasi durasi nanti, tanpa perlu bikin dashboard analytics dulu.
+    const segmentCount = Array.isArray(parsedData.podcast_script) ? parsedData.podcast_script.length : 0;
+    const wordCount = Array.isArray(parsedData.podcast_script)
+      ? parsedData.podcast_script.reduce((sum, seg) => {
+          const words = (seg?.text || '').trim().split(/\s+/).filter(Boolean).length;
+          return sum + words;
+        }, 0)
+      : 0;
+
+    console.log(`📊 [Generate Script Metrics] depth=${depth} wordCount=${wordCount} segmentCount=${segmentCount}`);
+
     res.json({
       success: true,
-      data: parsedData,
+      // depth ikut dibalikin ke frontend, supaya sumber kebenarannya tetap
+      // backend (bukan frontend nebak ulang value apa yang tadi dikirim)
+      // saat frontend nyimpen record podcast ke DB.
+      data: { ...parsedData, depth },
     });
   } catch (error) {
     console.error('❌ [Generate Script Error] message:', error?.message);
