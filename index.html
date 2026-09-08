@@ -1626,7 +1626,7 @@
           method: 'POST',
           headers,
           body: JSON.stringify({ text, depth: selectedDepth })
-        }, 60000);
+        }, 120000);
         const scriptData = await scriptRes.json();
 
         if (!scriptData.success) throw new Error(scriptData.error || 'Gagal generate naskah');
