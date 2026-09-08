@@ -607,7 +607,7 @@ app.post('/api/generate-audio-segments', requireAuth, async (req, res) => {
   const createdTempFiles = [];
 
   try {
-    const { podcast_script, podcast_id } = req.body;
+    const { podcast_script, podcast_id, depth } = req.body;
     const userId = req.user.id;
 
     if (!podcast_id || typeof podcast_id !== 'string') {
@@ -617,6 +617,13 @@ app.post('/api/generate-audio-segments', requireAuth, async (req, res) => {
     if (!podcast_script || !Array.isArray(podcast_script) || podcast_script.length === 0) {
       return res.status(400).json({ success: false, error: 'Array podcast_script wajib diisi!' });
     }
+
+    // 📊 BENCHMARK (belum ada perubahan behavior -- masih sequential persis
+    // seperti sebelumnya). Ini murni instrumentasi buat ngukur baseline
+    // "sequential" sebelum kita implementasi batched concurrency, sesuai
+    // urutan: benchmark dulu, baru optimize.
+    const ttsStart = Date.now();
+    const segmentCount = podcast_script.length;
 
     const segments = [];
     const userSupabase = req.supabase;
@@ -687,6 +694,13 @@ app.post('/api/generate-audio-segments', requireAuth, async (req, res) => {
         audioUrl: finalAudioUrl
       });
     }
+
+    // 📊 BENCHMARK: catat durasi total TTS. `depth` di sini cuma label buat
+    // korelasi log (dikirim opsional dari frontend) -- TIDAK mempengaruhi
+    // logic sama sekali, cuma metadata.
+    const ttsEnd = Date.now();
+    const ttsDuration = ttsEnd - ttsStart;
+    console.log(`📊 [TTS Benchmark] mode=sequential depth=${depth || 'unknown'} segmentCount=${segmentCount} ttsDurationMs=${ttsDuration}`);
 
     res.json({
       success: true,
