@@ -343,6 +343,39 @@ const MAX_OUTPUT_TOKENS_BY_DEPTH = {
   deep: 8192
 };
 
+// ============================================================
+// 🔒 CONCURRENT GENERATION LOCK (per-user, per-job-type)
+// ============================================================
+// Masalah yang di-fix: kalau request generate-script masih diproses di
+// backend (misal lagi retry 503 yang makan waktu puluhan detik) dan user
+// keburu timeout/klik generate lagi, sebelumnya TIDAK ADA penjagaan --
+// dua request jalan bersamaan, dua-duanya manggil Gemini, dan (kalau
+// endpoint-nya charge usage limit) user bisa kepotong quota harian 2x
+// untuk niat generate yang sama.
+//
+// Solusinya: in-memory lock per (userId + jobType). Selama user masih
+// punya job jenis itu yang jalan, request baru buat job yang sama
+// langsung ditolak (409) alih-alih diam-diam diproses dobel.
+//
+// CATATAN SKALA: ini in-memory (Map biasa), jadi cuma valid selama
+// backend jalan di SATU instance/proses (sesuai deployment Railway
+// sekarang). Kalau nanti di-scale ke multi-instance, lock ini perlu
+// dipindah ke storage bersama (mis. Redis atau tabel di Supabase).
+const activeGenerationJobs = new Set();
+
+function acquireGenerationLock(userId, jobType) {
+  const key = `${userId}:${jobType}`;
+  if (activeGenerationJobs.has(key)) {
+    return false;
+  }
+  activeGenerationJobs.add(key);
+  return true;
+}
+
+function releaseGenerationLock(userId, jobType) {
+  activeGenerationJobs.delete(`${userId}:${jobType}`);
+}
+
 function getContextForQuestion(podcastScript, currentIndex) {
   if (!Array.isArray(podcastScript) || podcastScript.length === 0) return [];
 
@@ -527,6 +560,16 @@ app.post('/api/extract-file', requireAuth, upload.single('file'), async (req, re
 
 // Endpoint 1: Generate Naskah & Quiz (Protected)
 app.post('/api/generate-script', requireAuth, async (req, res) => {
+  const userId = req.user.id;
+
+  // 🔒 Cegah user yang sama menjalankan 2 generation job bersamaan.
+  if (!acquireGenerationLock(userId, 'generate-script')) {
+    return res.status(409).json({
+      success: false,
+      error: 'Podcast sebelumnya masih diproses. Mohon tunggu sebentar sebelum generate lagi.'
+    });
+  }
+
   try {
     const { text } = req.body;
     if (!text || typeof text !== 'string' || !text.trim()) {
@@ -569,10 +612,19 @@ Materi:
 ${cleanText}
 `;
 
+    // 📊 BENCHMARK: ukur durasi panggilan Gemini itu sendiri (terpisah dari
+    // durasi total request). Ini buat diagnosa apakah timeout di frontend
+    // (60s) disebabkan oleh generation yang emang lama, atau oleh retry
+    // 503 yang numpuk backoff-nya -- kalau ada retry, log "[Gemini Overload]"
+    // dari callGeminiWithRetry bakal muncul duluan sebelum baris ini.
+    const geminiStart = Date.now();
     const response = await callGeminiWithRetry(prompt, {
       useSchema: true,
       maxOutputTokens: MAX_OUTPUT_TOKENS_BY_DEPTH[depth]
     });
+    const geminiDuration = Date.now() - geminiStart;
+    console.log(`📊 [Generate Script Benchmark] depth=${depth} geminiDurationMs=${geminiDuration}`);
+
     const rawText = response.text || '';
     const parsedData = JSON.parse(rawText);
 
@@ -599,16 +651,26 @@ ${cleanText}
     console.error('❌ [Generate Script Error] message:', error?.message);
     console.error('❌ [Generate Script Error] stack:', error?.stack);
     res.status(500).json({ success: false, error: 'Gagal membuat naskah podcast' });
+  } finally {
+    releaseGenerationLock(userId, 'generate-script');
   }
 });
 
 // Endpoint 2: Generate Audio Per Segment (Protected & Scoped Storage)
 app.post('/api/generate-audio-segments', requireAuth, async (req, res) => {
   const createdTempFiles = [];
+  const userId = req.user.id;
+
+  // 🔒 Cegah user yang sama menjalankan 2 generation job bersamaan.
+  if (!acquireGenerationLock(userId, 'generate-audio-segments')) {
+    return res.status(409).json({
+      success: false,
+      error: 'Proses pembuatan audio sebelumnya masih berjalan. Mohon tunggu sebentar.'
+    });
+  }
 
   try {
     const { podcast_script, podcast_id, depth } = req.body;
-    const userId = req.user.id;
 
     if (!podcast_id || typeof podcast_id !== 'string') {
       return res.status(400).json({ success: false, error: 'podcast_id wajib diisi!' });
@@ -718,6 +780,8 @@ app.post('/api/generate-audio-segments', requireAuth, async (req, res) => {
     });
 
     res.status(500).json({ success: false, error: 'Gagal membuat segmen audio' });
+  } finally {
+    releaseGenerationLock(userId, 'generate-audio-segments');
   }
 });
 
@@ -727,6 +791,8 @@ app.post('/api/generate-full-podcast', requireAuth, async (req, res) => {
   const reqId = crypto.randomUUID();
   const listFilePath = path.resolve(process.cwd(), `concat_list_${reqId}.txt`);
   const outputPath = path.resolve(process.cwd(), `full_podcast_${reqId}.mp3`);
+  const userId = req.user.id;
+  const LOCK_JOB_TYPE = 'generate-full-podcast';
 
   const cleanAllTemp = () => {
     tempFiles.forEach(f => { if (fs.existsSync(f)) try { fs.unlinkSync(f); } catch (e) {} });
@@ -734,10 +800,26 @@ app.post('/api/generate-full-podcast', requireAuth, async (req, res) => {
     if (fs.existsSync(outputPath)) try { fs.unlinkSync(outputPath); } catch (e) {}
   };
 
+  // 🔒 Cegah user yang sama menjalankan 2 generation job bersamaan.
+  if (!acquireGenerationLock(userId, LOCK_JOB_TYPE)) {
+    return res.status(409).json({
+      success: false,
+      error: 'Proses pembuatan full podcast sebelumnya masih berjalan. Mohon tunggu sebentar.'
+    });
+  }
+
+  // ⚠️ Endpoint ini pakai FFmpeg yang event-based (callback .on('end')/
+  // .on('error')), jadi try/finally biasa TIDAK cukup -- kalau lock
+  // dilepas di finally, dia bakal kelepas sebelum proses FFmpeg-nya
+  // benar-benar selesai (karena .run() non-blocking). Makanya release
+  // lock dipasang manual di TIAP jalur keluar (validasi gagal, rate
+  // limit, error TTS, dan kedua callback FFmpeg).
+
   try {
     const { podcast_script } = req.body;
 
     if (!podcast_script || !Array.isArray(podcast_script) || podcast_script.length === 0) {
+      releaseGenerationLock(userId, LOCK_JOB_TYPE);
       return res.status(400).json({ success: false, error: 'Array podcast_script wajib diisi!' });
     }
 
@@ -745,6 +827,7 @@ app.post('/api/generate-full-podcast', requireAuth, async (req, res) => {
     // (endpoint ini paling mahal -- TTS ulang semua segmen + FFmpeg merge)
     const usageCheck = await checkAndLogUsage(req.supabase, req.user.id, 'download_full_podcast');
     if (!usageCheck.allowed) {
+      releaseGenerationLock(userId, LOCK_JOB_TYPE);
       return res.status(429).json({
         success: false,
         error: `Batas harian download full podcast tercapai (${usageCheck.currentCount}/${usageCheck.limit} hari ini). Coba lagi besok ya!`
@@ -789,12 +872,14 @@ app.post('/api/generate-full-podcast', requireAuth, async (req, res) => {
       .outputOptions('-c copy')
       .output(outputPath)
       .on('end', () => {
+        releaseGenerationLock(userId, LOCK_JOB_TYPE);
         res.sendFile(outputPath, () => {
           cleanAllTemp();
         });
       })
       .on('error', (err) => {
         console.error('❌ [FFmpeg Error]');
+        releaseGenerationLock(userId, LOCK_JOB_TYPE);
         cleanAllTemp();
         res.status(500).json({ success: false, error: 'Gagal menggabungkan audio podcast' });
       })
@@ -802,6 +887,7 @@ app.post('/api/generate-full-podcast', requireAuth, async (req, res) => {
 
   } catch (error) {
     console.error('❌ [Full Podcast Error]');
+    releaseGenerationLock(userId, LOCK_JOB_TYPE);
     cleanAllTemp();
     res.status(500).json({ success: false, error: 'Gagal memproses full podcast' });
   }
