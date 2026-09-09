@@ -6,74 +6,154 @@
   <title>PodLearn - AI Podcast Generator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
   
   <!-- Supabase JS Client v2 -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <style>
     :root {
-      --paper: #F1EEFB;
-      --surface: #FFFFFF;
-      --ink: #211A34;
-      --ink-soft: #6B6383;
-      --accent-primary: #FF5A5F;
-      --accent-secondary: #0EA5A5;
-      --accent-tertiary: #FFC53D;
-      --danger: #E5484D;
-      --tint-primary: #FFE8E9;
-      --tint-secondary: #DFF7F4;
-      --tint-tertiary: #FFF6DC;
-      --tint-danger: #FDE3E4;
-      --shadow: #211A34;
-      --radius-lg: 22px;
-      --radius-md: 16px;
+      --bg-gradient: #F1F5F9;
+      --surface: rgba(255, 255, 255, 0.88);
+      --surface-border: rgba(226, 232, 240, 0.8);
+      --ink: #0F172A;
+      --ink-soft: #64748B;
+      --primary: #6366F1;
+      --primary-hover: #4F46E5;
+      --primary-light: #EEF2FF;
+      --accent-hero: linear-gradient(135deg, #1E1B4B 0%, #2E1065 50%, #312E81 100%);
+      --card-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.05), 0 8px 10px -6px rgba(15, 23, 42, 0.05);
+      --radius-lg: 20px;
+      --radius-md: 14px;
       --radius-sm: 10px;
+      --danger: #EF4444;
+      --tint-danger: rgba(239, 68, 68, 0.1);
     }
 
     [data-theme="dark"] {
-      --paper: #16121F;
-      --surface: #241D36;
-      --ink: #F1EEFB;
-      --ink-soft: #B8AFDB;
-      --accent-primary: #FF6B6B;
-      --accent-secondary: #2DD4C4;
-      --accent-tertiary: #FFD166;
-      --danger: #FF6B6B;
-      --tint-primary: #3A2030;
-      --tint-secondary: #123331;
-      --tint-tertiary: #3A3018;
-      --tint-danger: #3A1E20;
-      --shadow: #000000;
+      --bg-gradient: #090A0F;
+      --surface: rgba(30, 41, 59, 0.75);
+      --surface-border: rgba(255, 255, 255, 0.12);
+      --ink: #F8FAFC;
+      --ink-soft: #94A3B8;
+      --primary: #818CF8;
+      --primary-hover: #6366F1;
+      --primary-light: rgba(99, 102, 241, 0.18);
+      --accent-hero: linear-gradient(135deg, #0F172A 0%, #1E1B4B 100%);
+      --card-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.6);
+      --danger: #F87171;
+      --tint-danger: rgba(248, 113, 113, 0.15);
     }
 
     * { box-sizing: border-box; }
 
     html, body {
       overflow-x: hidden;
+      min-height: 100vh;
     }
 
     body {
       margin: 0;
-      background: var(--paper);
+      background-color: var(--bg-gradient);
       color: var(--ink);
       font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
-      min-height: 100vh;
-      padding: 20px 14px 48px;
-      transition: background 0.25s ease, color 0.25s ease;
+      padding: 24px 16px 60px;
+      transition: background-color 0.3s ease, color 0.3s ease;
+      position: relative;
     }
 
-    .display {
-      font-family: 'Space Grotesk', 'Plus Jakarta Sans', sans-serif;
-      font-weight: 700;
+    /* ---------- Light Mode Animated Mesh Background ---------- */
+    .light-bg-decor {
+      position: fixed;
+      top: 0; left: 0; width: 100vw; height: 100vh;
+      pointer-events: none;
+      z-index: 0;
+      overflow: hidden;
+      display: block;
+      background: radial-gradient(circle at 50% 0%, #EEF2FF 0%, #F8FAFC 70%);
+    }
+
+    [data-theme="dark"] .light-bg-decor {
+      display: none !important;
+    }
+
+    .mesh-blob {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(90px);
+      opacity: 0.6;
+      animation: floatBlob 16s ease-in-out infinite alternate;
+    }
+
+    .blob-1 {
+      width: 500px; height: 500px;
+      background: linear-gradient(135deg, #A5B4FC, #C7D2FE);
+      top: -100px; left: -100px;
+    }
+    .blob-2 {
+      width: 550px; height: 550px;
+      background: linear-gradient(135deg, #DDD6FE, #F472B6);
+      bottom: -150px; right: -100px;
+      animation-delay: -5s;
+    }
+    .blob-3 {
+      width: 400px; height: 400px;
+      background: linear-gradient(135deg, #38BDF8, #818CF8);
+      top: 35%; left: 25%;
+      animation-delay: -9s;
+    }
+
+    @keyframes floatBlob {
+      0% { transform: translate(0px, 0px) scale(1); }
+      50% { transform: translate(80px, 50px) scale(1.15); }
+      100% { transform: translate(-50px, 90px) scale(0.9); }
+    }
+
+    /* ---------- Dark Mode Space Moving Stars ---------- */
+    .stars-container {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 0;
+      overflow: hidden;
+    }
+
+    [data-theme="dark"] .stars-container {
+      display: block;
+    }
+
+    .star {
+      position: absolute;
+      background: #FFF;
+      border-radius: 50%;
+      opacity: 0.8;
+      animation: moveAndTwinkle linear infinite;
+    }
+
+    @keyframes moveAndTwinkle {
+      0% {
+        transform: translateY(0) translateX(0) scale(0.8);
+        opacity: 0.2;
+      }
+      50% {
+        opacity: 1;
+        transform: translateY(-50vh) translateX(30px) scale(1.2);
+      }
+      100% {
+        transform: translateY(-100vh) translateX(60px) scale(0.8);
+        opacity: 0.2;
+      }
     }
 
     .shell {
-      max-width: 840px;
+      max-width: 860px;
       margin: 0 auto;
       display: flex;
       flex-direction: column;
-      gap: 20px;
+      gap: 24px;
+      position: relative;
+      z-index: 1;
     }
 
     /* ---------- Header ---------- */
@@ -81,8 +161,8 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
-      flex-wrap: wrap;
+      gap: 16px;
+      padding: 8px 0;
     }
 
     .brand {
@@ -92,55 +172,56 @@
     }
 
     .brand-mark {
-      width: 48px;
-      height: 48px;
+      width: 44px;
+      height: 44px;
       border-radius: var(--radius-md);
-      background: var(--accent-primary);
-      border: 3px solid var(--ink);
+      background: var(--primary);
       display: flex;
       align-items: center;
       justify-content: center;
       color: #fff;
-      box-shadow: 4px 4px 0 var(--shadow);
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.35);
       flex-shrink: 0;
     }
 
     .brand-copy h1 {
       margin: 0;
+      font-family: 'Space Grotesk', sans-serif;
       font-size: 1.5rem;
+      font-weight: 700;
       letter-spacing: -0.02em;
-      word-break: break-word;
     }
 
     .brand-copy p {
-      margin: 2px 0 0;
+      margin: 1px 0 0;
       color: var(--ink-soft);
-      font-size: 0.8rem;
+      font-size: 0.78rem;
       font-weight: 600;
     }
 
     .header-actions {
       display: flex;
       align-items: center;
-      gap: 10px;
-      flex-wrap: wrap;
+      gap: 12px;
     }
 
     .theme-toggle {
-      width: 42px;
-      height: 42px;
+      width: 40px;
+      height: 40px;
       border-radius: 50%;
-      border: 3px solid var(--ink);
+      border: 1px solid var(--surface-border);
       background: var(--surface);
       cursor: pointer;
       font-size: 1.1rem;
-      box-shadow: 3px 3px 0 var(--shadow);
-      transition: transform 0.15s ease;
-      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+      box-shadow: var(--card-shadow);
     }
-    .theme-toggle:active { transform: translate(3px, 3px); box-shadow: none; }
+    .theme-toggle:hover { transform: scale(1.05); }
 
-    /* ---------- Equalizer signature element ---------- */
+    /* ---------- Equalizer ---------- */
     .eq {
       display: inline-flex;
       align-items: flex-end;
@@ -168,164 +249,212 @@
       50% { height: 100%; }
     }
 
-    /* ---------- Card base ---------- */
-    .card {
-      background: var(--surface);
-      border: 3px solid var(--ink);
+    /* ---------- Hero Banner ---------- */
+    .hero-card {
+      background: var(--accent-hero);
       border-radius: var(--radius-lg);
-      box-shadow: 6px 6px 0 var(--shadow);
-      padding: 20px;
-      word-wrap: break-word;
+      padding: 32px 28px;
+      color: #FFFFFF;
+      box-shadow: 0 12px 30px rgba(30, 27, 75, 0.25);
+      position: relative;
       overflow: hidden;
     }
 
-    .card-title {
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      background: rgba(255, 255, 255, 0.15);
+      backdrop-filter: blur(8px);
+      padding: 6px 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      margin-bottom: 14px;
+    }
+
+    .hero-title {
+      font-size: 1.65rem;
+      font-weight: 800;
+      margin: 0 0 8px;
+      line-height: 1.3;
+      letter-spacing: -0.01em;
+    }
+
+    .hero-desc {
+      margin: 0;
+      font-size: 0.9rem;
+      color: rgba(255, 255, 255, 0.85);
+      max-width: 580px;
+      line-height: 1.5;
+    }
+
+    /* ---------- Card Base ---------- */
+    .card {
+      background: var(--surface);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--surface-border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--card-shadow);
+      padding: 24px;
+      transition: all 0.2s ease;
+    }
+
+    .section-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      margin: 0 0 16px;
       display: flex;
       align-items: center;
       gap: 8px;
-      font-size: 1.05rem;
-      margin: 0 0 16px;
+      color: var(--ink);
+    }
+    .section-num {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--primary-light);
+      color: var(--primary);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      font-weight: 800;
     }
 
-    /* ---------- History List ---------- */
-    .history-item {
+    /* ---------- Dropzone Upload ---------- */
+    .dropzone {
+      border: 2px dashed var(--surface-border);
+      border-radius: var(--radius-md);
+      padding: 28px 20px;
+      text-align: center;
+      background: rgba(99, 102, 241, 0.02);
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .dropzone:hover {
+      border-color: var(--primary);
+      background: var(--primary-light);
+    }
+
+    .dropzone-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: var(--primary-light);
+      color: var(--primary);
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      padding: 12px 14px;
-      background: var(--paper);
-      border: 2px solid var(--ink-soft);
-      border-radius: var(--radius-md);
-      gap: 12px;
-      flex-wrap: wrap;
+      justify-content: center;
+      margin: 0 auto 10px;
+      font-size: 1.2rem;
     }
-    .history-info {
-      flex: 1;
-      min-width: 200px;
-    }
-    .history-info h4 {
-      margin: 0;
-      font-size: 0.95rem;
+
+    .dropzone-text {
+      font-size: 0.88rem;
+      font-weight: 700;
       color: var(--ink);
-      word-break: break-word;
+      margin: 0 0 4px;
     }
-    .history-info span {
+
+    .dropzone-sub {
       font-size: 0.75rem;
       color: var(--ink-soft);
-      font-weight: 600;
-    }
-
-    .history-actions {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-
-    .state-box {
-      text-align: center;
-      padding: 16px;
-      font-size: 0.9rem;
-      color: var(--ink-soft);
-      font-weight: 600;
-    }
-
-    /* ---------- Upload form ---------- */
-    .field-label {
-      display: block;
-      font-weight: 700;
-      margin-bottom: 8px;
-      font-size: 0.95rem;
-    }
-
-    .upload-row {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      flex-wrap: wrap;
-    }
-
-    .file-name {
-      font-size: 0.8rem;
-      color: var(--ink-soft);
-      font-style: italic;
-      font-weight: 600;
-      word-break: break-all;
+      margin: 0;
     }
 
     textarea, input[type="text"] {
       width: 100%;
-      padding: 12px 14px;
+      padding: 14px 16px;
       border-radius: var(--radius-md);
-      border: 2px solid var(--ink-soft);
-      background: var(--paper);
+      border: 1px solid var(--surface-border);
+      background: var(--surface);
       color: var(--ink);
       font-family: inherit;
-      font-size: 0.95rem;
+      font-size: 0.9rem;
       resize: vertical;
+      transition: border-color 0.2s ease;
     }
-
-    textarea:focus-visible, input:focus-visible, button:focus-visible {
-      outline: 3px solid var(--accent-tertiary);
-      outline-offset: 2px;
+    textarea:focus, input:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--primary-light);
     }
 
     .or-divider {
       display: flex;
       align-items: center;
       gap: 12px;
-      margin: 18px 0;
+      margin: 20px 0;
       color: var(--ink-soft);
       font-size: 0.72rem;
       font-weight: 800;
-      text-transform: uppercase;
       letter-spacing: 0.08em;
+      text-transform: uppercase;
     }
     .or-divider::before, .or-divider::after {
-      content: '';
-      flex: 1;
-      height: 2px;
-      background: var(--ink-soft);
-      opacity: 0.3;
+      content: ''; flex: 1; height: 1px; background: var(--surface-border);
     }
 
-    /* ---------- Depth Selector (Milestone 16) ---------- */
-    .depth-selector {
+    /* ---------- Depth Selector Grid ---------- */
+    .depth-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .depth-card {
+      border: 1.5px solid var(--surface-border);
+      border-radius: var(--radius-md);
+      padding: 16px 14px;
+      cursor: pointer;
+      background: var(--surface);
+      transition: all 0.2s ease;
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      justify-content: space-between;
     }
-    .depth-option {
+
+    .depth-card:hover {
+      border-color: var(--primary);
+    }
+
+    .depth-card.selected {
+      border-color: var(--primary);
+      background: var(--primary-light);
+      box-shadow: 0 0 0 1px var(--primary);
+    }
+
+    .depth-card input[type="radio"] { display: none; }
+
+    .depth-head {
       display: flex;
-      align-items: flex-start;
-      gap: 10px;
-      padding: 12px 14px;
-      border: 2px solid var(--ink-soft);
-      border-radius: var(--radius-md);
-      cursor: pointer;
-      background: var(--paper);
-      transition: border-color 0.12s ease, background 0.12s ease;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
     }
-    .depth-option:has(input:checked) {
-      border-color: var(--accent-secondary);
-      background: var(--tint-secondary);
-    }
-    .depth-option input[type="radio"] {
-      margin-top: 3px;
-      flex-shrink: 0;
-      accent-color: var(--accent-secondary);
-      width: 16px;
-      height: 16px;
-    }
-    .depth-option-title {
+
+    .depth-title {
       font-weight: 800;
       font-size: 0.9rem;
+      color: var(--ink);
     }
-    .depth-option-desc {
-      font-size: 0.78rem;
+
+    .depth-badge {
+      font-size: 0.65rem;
+      font-weight: 800;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #FEF3C7;
+      color: #D97706;
+    }
+
+    .depth-desc {
+      font-size: 0.75rem;
       color: var(--ink-soft);
-      font-weight: 600;
-      margin-top: 2px;
+      line-height: 1.4;
     }
 
     /* ---------- Buttons ---------- */
@@ -334,383 +463,202 @@
       align-items: center;
       justify-content: center;
       gap: 8px;
-      font-family: 'Space Grotesk', sans-serif;
+      font-family: inherit;
       font-weight: 700;
       font-size: 0.9rem;
-      padding: 12px 18px;
+      padding: 12px 20px;
       border-radius: var(--radius-md);
-      border: 3px solid var(--ink);
+      border: none;
       cursor: pointer;
-      box-shadow: 4px 4px 0 var(--shadow);
-      transition: transform 0.12s ease, box-shadow 0.12s ease;
-      background: var(--surface);
-      color: var(--ink);
+      transition: all 0.2s ease;
       touch-action: manipulation;
     }
-    .btn:active { transform: translate(3px, 3px); box-shadow: none; }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-    .btn-primary { background: var(--accent-primary); color: #fff; }
-    .btn-secondary { background: var(--accent-secondary); color: #fff; }
-    .btn-block { width: 100%; }
-    .btn-sm { padding: 8px 12px; font-size: 0.8rem; border-width: 2px; box-shadow: 3px 3px 0 var(--shadow); }
-    .btn-ghost { background: var(--paper); }
+    .btn-primary {
+      background: var(--primary);
+      color: #FFFFFF;
+      box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
+    }
+    .btn-primary:hover { background: var(--primary-hover); transform: translateY(-1px); }
+
+    .btn-secondary {
+      background: #10B981;
+      color: #FFFFFF;
+      box-shadow: 0 4px 14px rgba(16, 185, 129, 0.3);
+    }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--ink);
+      border: 1px solid var(--surface-border);
+    }
+    .btn-ghost:hover { background: var(--primary-light); border-color: var(--primary); }
+
+    .btn-block { width: 100%; padding: 14px; font-size: 0.95rem; }
+    .btn-sm { padding: 8px 14px; font-size: 0.8rem; border-radius: var(--radius-sm); }
 
     .btn-circle {
       border-radius: 50%;
-      width: 52px;
-      height: 52px;
+      width: 48px;
+      height: 48px;
       padding: 0;
-      font-size: 1.2rem;
-      flex-shrink: 0;
+      font-size: 1.1rem;
     }
 
     /* ---------- Loading ---------- */
-    .loading-card { text-align: center; }
-    .loading-card .eq {
-      height: 28px;
-      margin-bottom: 12px;
-      color: var(--accent-tertiary);
-    }
-    .loading-card .eq span { width: 5px; }
-    .step-text {
-      font-family: 'Space Grotesk', sans-serif;
-      font-weight: 700;
-      color: var(--accent-primary);
-      margin: 0 0 14px;
-      font-size: 0.95rem;
-    }
+    .loading-card { text-align: center; padding: 32px 20px; }
+    .step-text { font-weight: 700; color: var(--primary); margin-bottom: 12px; font-size: 0.9rem; }
     .progress-track {
-      width: 100%;
-      height: 10px;
-      border-radius: 999px;
-      background: var(--paper);
-      border: 2px solid var(--ink);
-      overflow: hidden;
+      width: 100%; height: 8px; border-radius: 999px; background: var(--surface-border); overflow: hidden;
     }
     .progress-fill {
-      height: 100%;
-      background: var(--accent-tertiary);
-      width: 33%;
-      transition: width 0.4s ease;
+      height: 100%; background: var(--primary); width: 33%; transition: width 0.4s ease;
     }
 
-    /* ---------- Player card ---------- */
+    /* ---------- Player Card ---------- */
+    .player-card {
+      background: var(--accent-hero);
+      color: #FFF;
+      border-radius: var(--radius-lg);
+      padding: 24px;
+    }
+
     .player-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      border-bottom: 2px dashed var(--ink-soft);
-      padding-bottom: 12px;
       margin-bottom: 16px;
-      flex-wrap: wrap;
-      gap: 10px;
     }
 
     .segment-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      font-family: 'Space Grotesk', sans-serif;
-      font-weight: 700;
       font-size: 0.75rem;
-      background: var(--accent-tertiary);
-      color: var(--ink);
-      padding: 6px 12px;
+      font-weight: 700;
+      background: rgba(255, 255, 255, 0.15);
+      padding: 4px 12px;
       border-radius: 999px;
-      border: 2px solid var(--ink);
     }
-    .segment-pill .eq { color: var(--ink); }
 
-    audio { width: 100%; margin-bottom: 16px; }
+    audio { width: 100%; margin-bottom: 16px; filter: invert(0.9) hue-rotate(180deg); }
 
     .player-controls {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 12px;
-      flex-wrap: wrap;
     }
-
-    .transport { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
     .speed-group {
       display: flex;
-      align-items: center;
-      gap: 2px;
-      background: var(--paper);
-      border: 2px solid var(--ink);
-      border-radius: var(--radius-md);
+      gap: 4px;
+      background: rgba(255, 255, 255, 0.1);
       padding: 3px;
-      font-size: 0.72rem;
-      max-width: 100%;
-      overflow-x: auto;
+      border-radius: var(--radius-sm);
     }
-    .speed-group span { padding: 0 4px; color: var(--ink-soft); font-weight: 700; white-space: nowrap; }
     .speed-btn {
-      border: none;
-      background: transparent;
-      color: var(--ink-soft);
-      font-weight: 700;
-      padding: 6px 8px;
-      border-radius: var(--radius-sm);
-      cursor: pointer;
-      font-family: inherit;
-      font-size: 0.75rem;
-      touch-action: manipulation;
+      border: none; background: transparent; color: rgba(255, 255, 255, 0.7);
+      font-weight: 700; padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 0.75rem;
     }
-    .speed-btn.active { background: var(--ink); color: var(--surface); }
+    .speed-btn.active { background: #FFF; color: #1E1B4B; }
 
-    /* ---------- Tutor box ---------- */
-    .tutor-box {
-      background: var(--tint-secondary);
-      border: 2px solid var(--accent-secondary);
-      border-radius: var(--radius-md);
-      padding: 16px;
-      margin-top: 18px;
-    }
-    .tutor-label {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-weight: 800;
-      font-size: 0.9rem;
-      margin-bottom: 10px;
-      color: var(--accent-secondary);
-    }
-    .tutor-input-row { display: flex; gap: 8px; flex-wrap: wrap; }
-    .tutor-input-row input { flex: 1; min-width: 180px; background: var(--surface); }
-
-    .answer-box {
-      display: none;
-      margin-top: 14px;
-      padding: 14px;
-      background: var(--surface);
-      border: 2px solid var(--accent-secondary);
-      border-radius: var(--radius-sm);
-    }
-    .answer-box.show { display: block; }
-    .answer-eyebrow {
-      font-size: 0.7rem;
-      font-weight: 800;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: var(--accent-secondary);
-    }
-    .answer-text { margin: 6px 0 0; font-size: 0.9rem; line-height: 1.6; word-break: break-word; }
-
-    /* ---------- Script bubbles ---------- */
+    /* ---------- Script & Quiz ---------- */
     .bubble {
-      position: relative;
-      padding: 12px 14px;
+      padding: 14px 16px;
       border-radius: var(--radius-md);
-      cursor: pointer;
-      transition: box-shadow 0.15s ease, transform 0.1s ease;
-      border-left: 5px solid transparent;
       margin-bottom: 10px;
-      word-break: break-word;
-    }
-    .bubble:hover { transform: translateX(2px); }
-    .bubble:last-child { margin-bottom: 0; }
-    .bubble.rian { background: var(--tint-primary); border-color: var(--accent-primary); }
-    .bubble.maya { background: var(--tint-secondary); border-color: var(--accent-secondary); }
-    .bubble.active-speaking { box-shadow: 3px 3px 0 var(--shadow); }
-
-    .bubble-head {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-family: 'Space Grotesk', sans-serif;
-      font-size: 0.68rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      margin-bottom: 4px;
-    }
-    .bubble.rian .bubble-head { color: var(--accent-primary); }
-    .bubble.maya .bubble-head { color: var(--accent-secondary); }
-    .bubble p { margin: 0; font-weight: 500; line-height: 1.55; font-size: 0.9rem; }
-    .bubble .eq { display: none; }
-    .bubble.is-playing .eq { display: inline-flex; }
-
-    /* ---------- Quiz ---------- */
-    .quiz-item {
-      background: var(--paper);
-      border: 2px solid var(--ink-soft);
-      border-radius: var(--radius-md);
-      padding: 16px;
-      margin-bottom: 14px;
-    }
-    .quiz-item:last-child { margin-bottom: 0; }
-    .quiz-question { font-weight: 700; margin: 0 0 10px; font-size: 0.9rem; word-break: break-word; }
-    .quiz-options {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-    }
-
-    .quiz-opt {
-      text-align: left;
-      padding: 10px 12px;
-      border-radius: var(--radius-sm);
-      border: 2px solid var(--ink-soft);
+      border-left: 4px solid transparent;
       background: var(--surface);
-      color: var(--ink);
-      font-size: 0.85rem;
-      font-weight: 600;
+      border: 1px solid var(--surface-border);
       cursor: pointer;
-      font-family: inherit;
-      word-break: break-word;
-      touch-action: manipulation;
+      transition: all 0.15s ease;
     }
-    .quiz-opt:hover:not(:disabled) { border-color: var(--accent-secondary); }
-    .quiz-opt:disabled { cursor: default; }
-    .quiz-opt.correct { background: var(--tint-tertiary); border-color: var(--accent-tertiary); font-weight: 800; }
-    .quiz-opt.wrong { background: var(--tint-danger); border-color: var(--danger); font-weight: 800; }
+    .bubble.rian { border-left-color: #6366F1; }
+    .bubble.maya { border-left-color: #10B981; }
+    .bubble.active-speaking { box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2); }
+
+    .quiz-item {
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      border-radius: var(--radius-md);
+      padding: 18px;
+      margin-bottom: 12px;
+    }
+
+    .quiz-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .quiz-opt {
+      text-align: left; padding: 12px 14px; border-radius: var(--radius-sm);
+      border: 1px solid var(--surface-border); background: var(--surface);
+      color: var(--ink); font-size: 0.85rem; font-weight: 600; cursor: pointer;
+    }
+    .quiz-opt.correct { background: #DEF7EC; border-color: #31C48D; color: #03543F; font-weight: 800; }
+    .quiz-opt.wrong { background: #FDE8E8; border-color: #F05252; color: #9B1C1C; font-weight: 800; }
     .quiz-opt.faded { opacity: 0.45; }
 
-    .score-badge {
-      display: none;
-      align-items: center;
-      gap: 6px;
-      background: var(--accent-tertiary);
-      color: var(--ink);
-      font-weight: 800;
-      padding: 6px 12px;
-      border-radius: 999px;
-      border: 2px solid var(--ink);
-      font-size: 0.8rem;
-    }
-    .score-badge.show { display: inline-flex; }
-
-    .section-header {
+    /* ---------- History List ---------- */
+    .history-item {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 14px;
+      padding: 14px 16px;
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      border-radius: var(--radius-md);
+      gap: 12px;
       flex-wrap: wrap;
-      gap: 10px;
     }
 
-    /* ---------- Auth User Row ---------- */
-    .auth-user-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
+    .history-info { flex: 1; min-width: 200px; }
+    .history-info h4 { margin: 0; font-size: 0.95rem; color: var(--ink); }
+    .history-info span { font-size: 0.75rem; color: var(--ink-soft); font-weight: 600; }
 
     /* ---------- Feedback Modal (Milestone 15) ---------- */
     .feedback-overlay {
       position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(33, 26, 52, 0.65);
-      backdrop-filter: blur(4px);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 9999;
-      padding: 16px;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(15, 23, 42, 0.65);
+      backdrop-filter: blur(6px);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 9999; padding: 16px;
     }
 
     .feedback-modal {
       background: var(--surface);
-      border: 3px solid var(--ink);
+      border: 1px solid var(--surface-border);
       border-radius: var(--radius-lg);
-      box-shadow: 8px 8px 0 var(--shadow);
-      width: 100%;
-      max-width: 460px;
-      padding: 24px;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      animation: modalPop 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
+      width: 100%; max-width: 460px; padding: 24px;
+      display: flex; flex-direction: column; gap: 16px;
     }
 
-    @keyframes modalPop {
-      0% { opacity: 0; transform: scale(0.92) translateY(10px); }
-      100% { opacity: 1; transform: scale(1) translateY(0); }
-    }
-
-    .feedback-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    .feedback-header h3 {
-      margin: 0;
-      font-size: 1.15rem;
-      font-family: 'Space Grotesk', sans-serif;
-    }
-
-    .feedback-close-btn {
-      background: transparent;
-      border: none;
-      font-size: 1.2rem;
-      cursor: pointer;
-      color: var(--ink-soft);
-    }
-
-    .rating-stars {
-      display: flex;
-      justify-content: center;
-      gap: 10px;
-      margin: 6px 0;
-    }
-
+    .rating-stars { display: flex; justify-content: center; gap: 10px; margin: 6px 0; }
     .star-btn {
-      background: var(--paper);
-      border: 2px solid var(--ink-soft);
-      border-radius: var(--radius-sm);
-      width: 46px;
-      height: 46px;
-      font-size: 1.3rem;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: transform 0.12s ease, border-color 0.12s ease;
-      touch-action: manipulation;
+      background: var(--surface); border: 1px solid var(--surface-border);
+      border-radius: var(--radius-sm); width: 44px; height: 44px;
+      font-size: 1.2rem; cursor: pointer; display: flex; align-items: center; justify-content: center;
     }
-
-    .star-btn:hover, .star-btn.active {
-      border-color: var(--accent-tertiary);
-      background: var(--tint-tertiary);
-      transform: scale(1.1);
-    }
-
-    .feedback-actions {
-      display: flex;
-      gap: 10px;
-      justify-content: flex-end;
-      margin-top: 8px;
-    }
+    .star-btn.active { border-color: var(--primary); background: var(--primary-light); }
 
     .hidden { display: none !important; }
 
-    /* ---------- RESPONSIVE MEDIA QUERIES ---------- */
-    @media (max-width: 580px) {
+    @media (max-width: 640px) {
+      .depth-grid { grid-template-columns: 1fr; }
       .quiz-options { grid-template-columns: 1fr; }
-      .site-header { flex-direction: column; align-items: flex-start; }
-      .header-actions { width: 100%; justify-content: space-between; }
-      .player-controls { flex-direction: column; align-items: stretch; }
-      .transport { justify-content: space-between; width: 100%; }
-      .speed-group { justify-content: center; width: 100%; }
-      .history-actions { width: 100%; justify-content: flex-end; }
-      .history-actions .btn { flex: 1; }
-      .star-btn { width: 40px; height: 40px; font-size: 1.1rem; }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      .eq span, .btn, .bubble, .theme-toggle, .star-btn, .feedback-modal { animation: none !important; transition: none !important; }
+      .hero-card { padding: 20px; }
+      .hero-title { font-size: 1.35rem; }
     }
   </style>
 </head>
 <body>
+
+  <!-- Light Mode Animated Gradient Mesh Background -->
+  <div class="light-bg-decor">
+    <div class="mesh-blob blob-1"></div>
+    <div class="mesh-blob blob-2"></div>
+    <div class="mesh-blob blob-3"></div>
+  </div>
+
+  <!-- Dark Mode Animated Moving Stars Background -->
+  <div class="stars-container" id="starsContainer"></div>
+
   <div class="shell">
 
     <!-- Header -->
@@ -722,117 +670,127 @@
           </div>
         </div>
         <div class="brand-copy">
-          <h1 class="display">PodLearn</h1>
-          <p>Ubah materi jadi podcast interaktif & kuis, otomatis</p>
+          <h1>PodLearn</h1>
+          <p>Ubah materi jadi podcast interaktif & kuis</p>
         </div>
       </div>
 
       <div class="header-actions">
-        <!-- Container Auth State -->
         <div id="authContainer">
           <button id="btnLoginGoogle" onclick="loginWithGoogle()" class="btn btn-ghost btn-sm">
             🔵 Login dengan Google
           </button>
-          <div id="userInfo" class="auth-user-row hidden">
-            <span id="userEmailText" style="font-size: 0.8rem; font-weight: 700; color: var(--ink-soft); word-break: break-all;"></span>
+          <div id="userInfo" class="hidden" style="display: flex; align-items: center; gap: 8px;">
+            <span id="userEmailText" style="font-size: 0.8rem; font-weight: 700; color: var(--ink-soft);"></span>
             <button id="btnLogout" onclick="logoutSupabase()" class="btn btn-ghost btn-sm">Logout</button>
           </div>
         </div>
-        <button class="theme-toggle" id="themeToggleBtn" onclick="toggleTheme()" aria-label="Ganti tema">🌙</button>
+        <button class="theme-toggle" id="themeToggleBtn" onclick="toggleTheme()">🌙</button>
       </div>
     </header>
 
-    <!-- Card Riwayat Podcast (Muncul jika user login dan ada riwayat) -->
-    <div id="historyCard" class="card hidden">
-      <div class="card-title">📚 Riwayat Podcast Saya</div>
-      <div id="historyListContainer" style="display: flex; flex-direction: column; gap: 10px;">
-        <!-- Item riwayat dirender secara dinamis -->
-      </div>
+    <!-- Hero Card -->
+    <div class="hero-card">
+      <div class="hero-badge">✨ AI-Powered Learning</div>
+      <h2 class="hero-title">Ubah Materi Jadi Podcast & Kuis Interaktif</h2>
+      <p class="hero-desc">Unggah dokumen atau tempelkan teks materi kamu, biarkan AI merangkum dan menyajikannya dalam format audio yang seru.</p>
     </div>
 
-    <!-- Form Input -->
+    <!-- History Card -->
+    <div id="historyCard" class="card hidden">
+      <div class="section-title">📚 Riwayat Podcast Saya</div>
+      <div id="historyListContainer" style="display: flex; flex-direction: column; gap: 10px;"></div>
+    </div>
+
+    <!-- Form Input Card -->
     <div class="card">
-      <div>
-        <label class="field-label">📄 Unggah Dokumen (PDF / TXT)</label>
-        <div class="upload-row">
-          <input type="file" id="pdfFileInput" accept=".pdf,.txt" class="hidden" onchange="handleFileUpload(event)">
-          <button id="btnSelectFile" class="btn btn-ghost btn-sm" onclick="document.getElementById('pdfFileInput').click()">📎 Pilih File</button>
-          <span id="fileNameDisplay" class="file-name">Belum ada file dipilih</span>
-        </div>
+      <div class="section-title"><span class="section-num">1</span> Pilih Sumber Materi</div>
+      
+      <div class="dropzone" onclick="document.getElementById('pdfFileInput').click()">
+        <div class="dropzone-icon">☁️</div>
+        <p class="dropzone-text">Tarik & lepas dokumen di sini, atau <span style="color: var(--primary);">pilih file</span></p>
+        <p class="dropzone-sub">Mendukung format PDF atau TXT (Maks. 10MB)</p>
+        <input type="file" id="pdfFileInput" accept=".pdf,.txt" class="hidden" onchange="handleFileUpload(event)">
       </div>
+      <div id="fileNameDisplay" style="margin-top: 6px; font-size: 0.8rem; color: var(--ink-soft); font-style: italic;">Belum ada file dipilih</div>
 
-      <div class="or-divider">Atau tempelkan teks</div>
+      <div class="or-divider">Atau Tempel Teks</div>
 
-      <div>
-        <label class="field-label">Tempelkan Teks Materi</label>
-        <textarea id="materiInput" rows="5" placeholder="Contoh: Manusia butuh tidur 7-8 jam sehari untuk menjaga memori otak dan imunitas tubuh..."></textarea>
-      </div>
+      <textarea id="materiInput" rows="4" placeholder="Contoh: Manusia butuh tidur 7-8 jam sehari untuk menjaga memori otak dan imunitas tubuh..."></textarea>
 
-      <!-- 🎚️ MILESTONE 16: Podcast Depth Control -->
-      <div style="margin-top: 18px;">
-        <label class="field-label">Seberapa lengkap kamu ingin materi ini dijelaskan?</label>
-        <div id="depthSelector" class="depth-selector">
-          <label class="depth-option">
+      <!-- Depth Selector Horizontal Grid -->
+      <div style="margin-top: 24px;">
+        <div class="section-title"><span class="section-num">2</span> Seberapa lengkap kamu ingin materi ini dijelaskan?</div>
+        
+        <div id="depthSelector" class="depth-grid">
+          <label class="depth-card" onclick="selectDepthCard(this)">
             <input type="radio" name="depthOption" value="concise">
-            <span>
-              <span class="depth-option-title">Ringkas</span>
-              <span class="depth-option-desc">Fokus pada konsep dan poin utama.</span>
-            </span>
+            <div>
+              <div class="depth-head">
+                <span class="depth-title">Ringkas ⚡</span>
+              </div>
+              <p class="depth-desc">Fokus pada konsep kunci dan poin utama. Cocok untuk ulasan cepat.</p>
+            </div>
           </label>
-          <label class="depth-option">
+
+          <label class="depth-card selected" onclick="selectDepthCard(this)">
             <input type="radio" name="depthOption" value="balanced" checked>
-            <span>
-              <span class="depth-option-title">Standar ⭐</span>
-              <span class="depth-option-desc">Penjelasan seimbang tanpa terlalu melebar.</span>
-            </span>
+            <div>
+              <div class="depth-head">
+                <span class="depth-title">Standar</span>
+                <span class="depth-badge">Rekomendasi</span>
+              </div>
+              <p class="depth-desc">Penjelasan seimbang tanpa terlalu melebar. Ideal untuk pembelajaran harian.</p>
+            </div>
           </label>
-          <label class="depth-option">
+
+          <label class="depth-card" onclick="selectDepthCard(this)">
             <input type="radio" name="depthOption" value="deep">
-            <span>
-              <span class="depth-option-title">Mendalam</span>
-              <span class="depth-option-desc">Bahas konsep, hubungan antar-topik, dan detail penting.</span>
-            </span>
+            <div>
+              <div class="depth-head">
+                <span class="depth-title">Mendalam 📖</span>
+              </div>
+              <p class="depth-desc">Bahas mendalam beserta hubungan antar-topik dan detail penting.</p>
+            </div>
           </label>
         </div>
       </div>
 
-      <div style="margin-top: 18px;">
+      <div style="margin-top: 24px;">
         <button id="btnGenerate" onclick="processPodcast()" class="btn btn-primary btn-block">
           🚀 Buat Podcast Interaktif & Kuis
         </button>
       </div>
     </div>
 
-    <!-- Loading -->
+    <!-- Loading Card -->
     <div id="loadingStatus" class="card loading-card hidden">
-      <div class="eq always-on"><span></span><span></span><span></span><span></span><span></span></div>
+      <div class="eq always-on" style="height: 24px; color: var(--primary); margin-bottom: 12px;">
+        <span></span><span></span><span></span><span></span>
+      </div>
       <p id="stepText" class="step-text">1/3 Sedang meracik naskah & kuis (Gemini AI)...</p>
       <div class="progress-track"><div id="progressBar" class="progress-fill"></div></div>
     </div>
 
-    <!-- Result -->
+    <!-- Result Container -->
     <div id="resultContainer" class="hidden" style="display: flex; flex-direction: column; gap: 20px;">
 
-      <!-- Player -->
-      <div class="card" id="playerCard">
+      <!-- Player Card -->
+      <div class="player-card" id="playerCard">
         <div class="player-header">
-          <div class="card-title" style="margin:0;">🎧 Player Interaktif</div>
-          <span id="segmentIndicator" class="segment-pill">
-            <span class="eq"><span></span><span></span><span></span><span></span></span>
-            Segmen 1 / -
-          </span>
+          <span style="font-weight: 800; font-size: 1.05rem;">🎧 Player Interaktif</span>
+          <span id="segmentIndicator" class="segment-pill">Segmen 1 / -</span>
         </div>
 
         <audio id="segmentAudioPlayer" controls></audio>
 
         <div class="player-controls">
-          <div class="transport">
-            <button id="btnPrevSeg" onclick="prevSegment()" class="btn btn-ghost btn-sm">⏮️ Prev</button>
+          <div style="display: flex; gap: 8px;">
+            <button id="btnPrevSeg" onclick="prevSegment()" class="btn btn-ghost btn-sm" style="color:#FFF; border-color:rgba(255,255,255,0.2);">⏮️ Prev</button>
             <button id="btnPlayPauseSegment" onclick="togglePlayPauseSegment()" class="btn btn-primary btn-circle">▶️</button>
-            <button id="btnNextSeg" onclick="nextSegment()" class="btn btn-ghost btn-sm">Next ⏭️</button>
+            <button id="btnNextSeg" onclick="nextSegment()" class="btn btn-ghost btn-sm" style="color:#FFF; border-color:rgba(255,255,255,0.2);">Next ⏭️</button>
           </div>
           <div class="speed-group">
-            <span>Speed</span>
             <button onclick="setSpeed(1)" class="speed-btn active">1x</button>
             <button onclick="setSpeed(1.25)" class="speed-btn">1.25x</button>
             <button onclick="setSpeed(1.5)" class="speed-btn">1.5x</button>
@@ -840,38 +798,35 @@
           </div>
         </div>
 
-        <div class="tutor-box">
-          <div class="tutor-label">💬 Tanya Tutor AI tentang bagian ini</div>
-          <div class="tutor-input-row">
-            <input type="text" id="questionInput" placeholder="Contoh: Kenapa konsep ini penting?">
+        <div style="margin-top: 18px; background: rgba(255,255,255,0.08); padding: 14px; border-radius: var(--radius-md);">
+          <div style="font-weight: 700; font-size: 0.85rem; margin-bottom: 8px;">💬 Tanya Tutor AI tentang bagian ini</div>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <input type="text" id="questionInput" placeholder="Contoh: Kenapa konsep ini penting?" style="flex: 1; min-width: 180px; background: rgba(255,255,255,0.15); border: none; color: #FFF;">
             <button id="btnAskQuestion" onclick="askTutorAI()" class="btn btn-secondary btn-sm">Tanya</button>
           </div>
-          <div id="tutorAnswerBox" class="answer-box">
-            <span class="answer-eyebrow">💡 Jawaban Tutor AI</span>
-            <p id="tutorAnswerText" class="answer-text"></p>
+          <div id="tutorAnswerBox" class="hidden" style="margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px; font-size: 0.85rem; line-height: 1.5; color: rgba(255,255,255,0.9);">
+            <p id="tutorAnswerText" style="margin: 0;"></p>
           </div>
         </div>
       </div>
 
       <!-- Script -->
       <div class="card">
-        <div class="card-title">📜 Naskah Podcast Interaktif</div>
+        <div class="section-title">📜 Naskah Podcast Interaktif</div>
         <div id="scriptContainer"></div>
       </div>
 
       <!-- Download -->
-      <div class="card" style="padding: 16px 20px;">
-        <div class="section-header" style="margin:0;">
-          <div class="card-title" style="margin:0; font-size: 0.95rem;">💾 Unduh Full Podcast (Single Audio)</div>
-          <button id="btnDownloadFull" onclick="downloadFullPodcast()" class="btn btn-ghost btn-sm">Unduh MP3</button>
-        </div>
+      <div class="card" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+        <span style="font-weight: 700; font-size: 0.9rem;">💾 Unduh Full Podcast (Single Audio)</span>
+        <button id="btnDownloadFull" onclick="downloadFullPodcast()" class="btn btn-ghost btn-sm">Unduh MP3</button>
       </div>
 
       <!-- Quiz -->
       <div class="card">
-        <div class="section-header">
-          <div class="card-title" style="margin:0;">📝 Kuis Evaluasi Interaktif</div>
-          <span id="scoreBadge" class="score-badge">Skor: <span id="scoreValue">0</span>/<span id="totalQuestions">10</span></span>
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
+          <div class="section-title" style="margin:0;">📝 Kuis Evaluasi Interaktif</div>
+          <span id="scoreBadge" class="hidden" style="font-weight: 800; font-size: 0.85rem; color: var(--primary);">Skor: <span id="scoreValue">0</span>/<span id="totalQuestions">10</span></span>
         </div>
         <div id="quizContainer"></div>
       </div>
@@ -882,13 +837,13 @@
   <!-- Feedback Modal Popup (Milestone 15) -->
   <div id="feedbackModalOverlay" class="feedback-overlay hidden">
     <div class="feedback-modal">
-      <div class="feedback-header">
-        <h3>⭐ Feedback PodLearn</h3>
-        <button class="feedback-close-btn" onclick="dismissFeedbackModal()">✕</button>
+      <div style="display: flex; align-items: center; justify-content: space-between;">
+        <h3 style="margin: 0; font-size: 1.1rem;">⭐ Feedback PodLearn</h3>
+        <button onclick="dismissFeedbackModal()" style="background: none; border: none; font-size: 1.2rem; cursor: pointer; color: var(--ink-soft);">✕</button>
       </div>
 
       <div>
-        <label class="field-label" style="text-align: center;">Podcast terakhir lo gimana?</label>
+        <label style="display: block; font-weight: 700; text-align: center; margin-bottom: 6px;">Podcast terakhir lo gimana?</label>
         <div class="rating-stars">
           <button class="star-btn" onclick="selectRating(1)">1️⃣</button>
           <button class="star-btn" onclick="selectRating(2)">2️⃣</button>
@@ -899,26 +854,59 @@
       </div>
 
       <div>
-        <label id="followupQuestionLabel" class="field-label" style="font-size: 0.85rem; color: var(--ink-soft);"></label>
+        <label id="followupQuestionLabel" style="display: block; font-size: 0.85rem; color: var(--ink-soft); font-weight: 700; margin-bottom: 4px;"></label>
         <input type="text" id="followupAnswerInput" placeholder="Jawaban singkat lo (opsional)...">
       </div>
 
       <div>
-        <label class="field-label" style="font-size: 0.85rem; color: var(--ink-soft);">Ada yang mau ditambahin?</label>
+        <label style="display: block; font-size: 0.85rem; color: var(--ink-soft); font-weight: 700; margin-bottom: 4px;">Ada yang mau ditambahin?</label>
         <textarea id="feedbackCommentInput" rows="2" placeholder="Saran/kritik bebas buat PodLearn..."></textarea>
       </div>
 
-      <div class="feedback-actions">
+      <div style="display: flex; gap: 10px; justify-content: flex-end;">
         <button id="btnSkipFeedback" onclick="dismissFeedbackModal()" class="btn btn-ghost btn-sm">Lewati</button>
         <button id="btnSubmitFeedback" onclick="submitFeedback()" class="btn btn-primary btn-sm">Kirim Feedback</button>
       </div>
     </div>
   </div>
 
+  <!-- Space Moving Stars Generator Script -->
   <script>
-    // ============================================
-    // 🔒 SUPABASE CLIENT & CONFIG
-    // ============================================
+    function generateMovingStars() {
+      const container = document.getElementById('starsContainer');
+      container.innerHTML = '';
+      const starCount = 80;
+
+      for (let i = 0; i < starCount; i++) {
+        const star = document.createElement('div');
+        star.className = 'star';
+        
+        const size = Math.random() * 3 + 1;
+        star.style.width = `${size}px`;
+        star.style.height = `${size}px`;
+        
+        star.style.left = `${Math.random() * 100}%`;
+        star.style.top = `${Math.random() * 120}%`;
+        
+        const duration = Math.random() * 12 + 8;
+        star.style.animationDuration = `${duration}s`;
+        star.style.animationDelay = `${Math.random() * 10}s`;
+        
+        container.appendChild(star);
+      }
+    }
+    generateMovingStars();
+
+    function selectDepthCard(element) {
+      document.querySelectorAll('.depth-card').forEach(card => card.classList.remove('selected'));
+      element.classList.add('selected');
+      const radio = element.querySelector('input[type="radio"]');
+      if (radio) radio.checked = true;
+    }
+  </script>
+
+  <!-- Complete Script Logic (All Milestones Retained) -->
+  <script>
     const SUPABASE_URL = 'https://egkrbtmszicrsavtrfta.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_7Vtbl3pupXGiMy449x-clg_fMoHqKLx';
     const API_BASE = 'https://podlearn-backend-production.up.railway.app';
@@ -942,7 +930,7 @@
     let isDownloadingMP3 = false;
     let activeDeletingPodcastIds = new Set();
 
-    // Feedback State (Milestone 15)
+    // Feedback State
     let currentFeedbackQuestionId = null;
     let selectedRatingValue = 0;
     let isSubmittingFeedback = false;
@@ -950,39 +938,29 @@
 
     const segmentAudioPlayer = document.getElementById('segmentAudioPlayer');
 
-    // ---------- Network Timeout Helper ----------
     async function fetchWithTimeout(resource, options = {}, timeoutMs = 60000) {
       const controller = new AbortController();
       const id = setTimeout(() => controller.abort(), timeoutMs);
       try {
-        const response = await fetch(resource, {
-          ...options,
-          signal: controller.signal
-        });
+        const response = await fetch(resource, { ...options, signal: controller.signal });
         clearTimeout(id);
         return response;
       } catch (err) {
         clearTimeout(id);
-        if (err.name === 'AbortError') {
-          throw new Error('TIMEOUT');
-        }
+        if (err.name === 'AbortError') throw new Error('TIMEOUT');
         throw err;
       }
     }
 
-    // ---------- Auth Headers Helper ----------
     async function getAuthHeaders() {
       const { data: { session } } = await supabaseClient.auth.getSession();
-      if (!session || !session.access_token) {
-        throw new Error('AUTH_EXPIRED');
-      }
+      if (!session || !session.access_token) throw new Error('AUTH_EXPIRED');
       return {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${session.access_token}`
       };
     }
 
-    // ---------- Auth Handlers ----------
     async function initAuth() {
       const { data: { session } } = await supabaseClient.auth.getSession();
       updateAuthUI(session);
@@ -1033,33 +1011,22 @@
       userPodcastsList = [];
       activeDeletingPodcastIds.clear();
 
-      const resultContainer = document.getElementById('resultContainer');
-      const historyListContainer = document.getElementById('historyListContainer');
-      const materiInput = document.getElementById('materiInput');
-      const fileNameDisplay = document.getElementById('fileNameDisplay');
-      const tutorAnswerBox = document.getElementById('tutorAnswerBox');
-      const scoreBadge = document.getElementById('scoreBadge');
-
-      if (resultContainer) resultContainer.classList.add('hidden');
-      if (historyListContainer) historyListContainer.innerHTML = '';
-      if (materiInput) materiInput.value = '';
-      if (fileNameDisplay) fileNameDisplay.innerText = 'Belum ada file dipilih';
-      if (tutorAnswerBox) tutorAnswerBox.classList.remove('show');
-      if (scoreBadge) scoreBadge.classList.remove('show');
+      document.getElementById('resultContainer').classList.add('hidden');
+      document.getElementById('historyListContainer').innerHTML = '';
+      document.getElementById('materiInput').value = '';
+      document.getElementById('fileNameDisplay').innerText = 'Belum ada file dipilih';
+      document.getElementById('tutorAnswerBox').classList.add('hidden');
+      document.getElementById('scoreBadge').classList.add('hidden');
     }
 
     async function loginWithGoogle() {
       const btnLogin = document.getElementById('btnLoginGoogle');
       btnLogin.disabled = true;
       try {
-        const { error } = await supabaseClient.auth.signInWithOAuth({
+        await supabaseClient.auth.signInWithOAuth({
           provider: 'google',
-          options: {
-            redirectTo: window.location.origin + window.location.pathname
-          }
+          options: { redirectTo: window.location.origin + window.location.pathname }
         });
-
-        if (error) alert('Gagal melakukan login Google. Silakan coba lagi.');
       } finally {
         btnLogin.disabled = false;
       }
@@ -1068,29 +1035,25 @@
     async function logoutSupabase() {
       const btnLogout = document.getElementById('btnLogout');
       if (btnLogout) btnLogout.disabled = true;
-
       if (segmentAudioPlayer) {
         segmentAudioPlayer.pause();
         segmentAudioPlayer.removeAttribute('src');
         segmentAudioPlayer.load();
       }
-
       try {
-        const { error } = await supabaseClient.auth.signOut();
-        if (error) alert('Gagal melakukan logout. Silakan coba lagi.');
+        await supabaseClient.auth.signOut();
       } finally {
         if (btnLogout) btnLogout.disabled = false;
       }
     }
 
-    // ---------- Database & History Helpers ----------
     async function loadUserPodcasts() {
       if (!currentUserSession || !currentUserSession.user) return;
 
       const historyCard = document.getElementById('historyCard');
       const container = document.getElementById('historyListContainer');
       historyCard.classList.remove('hidden');
-      container.innerHTML = `<div class="state-box">⏳ Memuat riwayat...</div>`;
+      container.innerHTML = `<div style="text-align:center; padding:12px; font-size:0.85rem; color:var(--ink-soft);">⏳ Memuat riwayat...</div>`;
 
       try {
         const { data, error } = await supabaseClient
@@ -1100,13 +1063,11 @@
           .order('created_at', { ascending: false });
 
         if (error) throw error;
-
         userPodcastsList = data || [];
         renderPodcastHistory(userPodcastsList);
       } catch (err) {
-        console.error('❌ Gagal memuat riwayat podcast:', err.message);
         container.innerHTML = `
-          <div class="state-box" style="color: var(--danger);">
+          <div style="text-align:center; color:var(--danger); font-size:0.85rem;">
             ⚠️ Riwayat gagal dimuat. Periksa koneksi lalu coba lagi.
             <br>
             <button onclick="loadUserPodcasts()" class="btn btn-ghost btn-sm" style="margin-top:8px;">🔄 Coba Lagi</button>
@@ -1121,17 +1082,13 @@
 
       if (!podcasts || podcasts.length === 0) {
         historyCard.classList.remove('hidden');
-        container.innerHTML = `<div class="state-box">Belum ada riwayat podcast.</div>`;
+        container.innerHTML = `<div style="text-align:center; padding:12px; font-size:0.85rem; color:var(--ink-soft);">Belum ada riwayat podcast.</div>`;
         return;
       }
 
       historyCard.classList.remove('hidden');
       container.innerHTML = podcasts.map((pod) => {
-        const dateFormatted = new Date(pod.created_at).toLocaleString('id-ID', {
-          dateStyle: 'medium',
-          timeStyle: 'short'
-        });
-
+        const dateFormatted = new Date(pod.created_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
         const totalSegs = pod.audio_segments ? pod.audio_segments.length : 0;
         const lastIdx = pod.last_segment_index || 0;
         const isCompleted = pod.is_completed || (lastIdx >= (totalSegs - 1) && totalSegs > 0);
@@ -1156,11 +1113,11 @@
               <h4>${pod.title || 'Podcast Tanpa Judul'}</h4>
               <span>📅 ${dateFormatted} · ${statusBadge}</span>
             </div>
-            <div class="history-actions">
-              <button onclick="openExistingPodcast('${pod.id}')" ${isDeleting || isProcessingPodcast ? 'disabled' : ''} class="btn btn-secondary btn-sm">
+            <div style="display:flex; gap:8px;">
+              <button onclick="openExistingPodcast('${pod.id}')" ${isDeleting || isProcessingPodcast ? 'disabled' : ''} class="btn btn-ghost btn-sm">
                 ${btnText}
               </button>
-              <button onclick="deletePodcast('${pod.id}', '${safeTitle}')" ${isDeleting ? 'disabled' : ''} class="btn btn-ghost btn-sm" style="color: var(--danger); border-color: var(--danger);" title="Hapus Podcast">
+              <button onclick="deletePodcast('${pod.id}', '${safeTitle}')" ${isDeleting ? 'disabled' : ''} class="btn btn-ghost btn-sm" style="color:var(--danger); border-color:var(--danger);" title="Hapus Podcast">
                 ${isDeleting ? '⏳' : '🗑️ Hapus'}
               </button>
             </div>
@@ -1187,15 +1144,13 @@
       renderScriptBox();
       renderQuiz();
 
-      document.getElementById('tutorAnswerBox').classList.remove('show');
-      document.getElementById('scoreBadge').classList.remove('show');
+      document.getElementById('tutorAnswerBox').classList.add('hidden');
+      document.getElementById('scoreBadge').classList.add('hidden');
 
-      const resultContainer = document.getElementById('resultContainer');
-      resultContainer.classList.remove('hidden');
+      document.getElementById('resultContainer').classList.remove('hidden');
 
       const totalSegs = currentAudioSegments.length;
       let targetSegIndex = selectedPod.last_segment_index || 0;
-
       if (selectedPod.is_completed || targetSegIndex >= (totalSegs - 1)) {
         targetSegIndex = 0;
       }
@@ -1205,10 +1160,7 @@
     }
 
     async function deletePodcast(podcastId, podcastTitle) {
-      if (!currentUserSession || !currentUserSession.user) {
-        return alert('Aksi ditolak: Anda harus login terlebih dahulu.');
-      }
-
+      if (!currentUserSession || !currentUserSession.user) return alert('Aksi ditolak: Anda harus login terlebih dahulu.');
       if (activeDeletingPodcastIds.has(podcastId)) return;
 
       const confirmDelete = confirm(`Apakah Anda yakin ingin menghapus "${podcastTitle}"?\nSemua data podcast ini akan dihapus.`);
@@ -1219,11 +1171,8 @@
 
       try {
         const headers = await getAuthHeaders();
-
         const res = await fetchWithTimeout(`${API_BASE}/api/delete-podcast`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ podcast_id: podcastId })
+          method: 'POST', headers, body: JSON.stringify({ podcast_id: podcastId })
         }, 30000);
 
         const data = await res.json();
@@ -1240,16 +1189,8 @@
         }
 
         await loadUserPodcasts();
-
       } catch (err) {
-        console.error('❌ Delete Podcast Error:', err);
-        if (err.message === 'AUTH_EXPIRED') {
-          alert('Sesi Anda telah berakhir. Silakan login kembali.');
-        } else if (err.message === 'TIMEOUT') {
-          alert('Waktu permintaan habis saat menghapus. Silakan coba lagi.');
-        } else {
-          alert('Podcast gagal dihapus. Silakan coba lagi.');
-        }
+        alert(err.message || 'Podcast gagal dihapus. Silakan coba lagi.');
       } finally {
         activeDeletingPodcastIds.delete(podcastId);
         renderPodcastHistory(userPodcastsList);
@@ -1258,7 +1199,6 @@
 
     async function savePlaybackProgress(segmentIndex) {
       if (!currentActivePodcastId || !currentUserSession || !currentUserSession.user) return;
-
       const totalSegments = currentAudioSegments.length;
       const isCompleted = segmentIndex >= (totalSegments - 1) && totalSegments > 0;
 
@@ -1270,42 +1210,31 @@
       }
 
       try {
-        const { error } = await supabaseClient
+        await supabaseClient
           .from('podcasts')
-          .update({
-            last_segment_index: segmentIndex,
-            is_completed: isCompleted
-          })
+          .update({ last_segment_index: segmentIndex, is_completed: isCompleted })
           .eq('id', currentActivePodcastId)
           .eq('user_id', currentUserSession.user.id);
-
-        if (error) console.error('⚠️ Gagal update progress ke Supabase:', error.message);
       } catch (err) {
         console.error('⚠️ Error savePlaybackProgress:', err.message);
       }
     }
 
-    // 🎚️ MILESTONE 16: createInitialPodcastRecord sekarang menerima parameter
-    // `depth` dan menyimpannya ke kolom `depth` di tabel `podcasts` -- ini
-    // fondasi buat analytics/kalibrasi durasi di masa depan (lihat Step 5/6).
     async function createInitialPodcastRecord(title, sourceText, script, quiz, depth) {
       if (!currentUserSession || !currentUserSession.user) return null;
-
       const { data, error } = await supabaseClient
         .from('podcasts')
-        .insert([
-          {
-            user_id: currentUserSession.user.id,
-            title: title || 'Podcast Tanpa Judul',
-            source_text: sourceText,
-            podcast_script: script,
-            audio_segments: [],
-            quiz_data: quiz,
-            depth: depth || 'balanced',
-            last_segment_index: 0,
-            is_completed: false
-          }
-        ])
+        .insert([{
+          user_id: currentUserSession.user.id,
+          title: title || 'Podcast Tanpa Judul',
+          source_text: sourceText,
+          podcast_script: script,
+          audio_segments: [],
+          quiz_data: quiz,
+          depth: depth || 'balanced',
+          last_segment_index: 0,
+          is_completed: false
+        }])
         .select('id')
         .single();
 
@@ -1315,28 +1244,20 @@
 
     async function updatePodcastSegmentsInDB(podcastId, segments) {
       if (!currentUserSession || !currentUserSession.user) return;
-
-      const { error } = await supabaseClient
+      await supabaseClient
         .from('podcasts')
         .update({ audio_segments: segments })
         .eq('id', podcastId)
         .eq('user_id', currentUserSession.user.id);
-
-      if (error) throw error;
     }
 
-    // ---------- FEEDBACK SYSTEM HELPERS (Milestone 15) ----------
+    // Feedback System Logic
     async function checkFeedbackPromptStatus() {
       if (feedbackPromptCheckedInSession || !currentUserSession) return;
       feedbackPromptCheckedInSession = true;
-
       try {
         const headers = await getAuthHeaders();
-        const res = await fetchWithTimeout(`${API_BASE}/api/feedback/status`, {
-          method: 'GET',
-          headers
-        }, 15000);
-
+        const res = await fetchWithTimeout(`${API_BASE}/api/feedback/status`, { method: 'GET', headers }, 15000);
         const data = await res.json();
         if (data.success && data.showFeedback) {
           currentFeedbackQuestionId = data.questionId;
@@ -1344,7 +1265,7 @@
           showFeedbackModal();
         }
       } catch (err) {
-        console.warn('⚠️ Gagal memeriksa status feedback prompt:', err.message);
+        console.warn('⚠️ Gagal periksa feedback status:', err.message);
       }
     }
 
@@ -1353,9 +1274,7 @@
       resetStarRatingUI();
       document.getElementById('followupAnswerInput').value = '';
       document.getElementById('feedbackCommentInput').value = '';
-
-      const overlay = document.getElementById('feedbackModalOverlay');
-      overlay.classList.remove('hidden');
+      document.getElementById('feedbackModalOverlay').classList.remove('hidden');
     }
 
     function resetStarRatingUI() {
@@ -1370,39 +1289,26 @@
     }
 
     async function dismissFeedbackModal() {
-      const overlay = document.getElementById('feedbackModalOverlay');
-      overlay.classList.add('hidden');
-
+      document.getElementById('feedbackModalOverlay').classList.add('hidden');
       try {
         const headers = await getAuthHeaders();
-        await fetchWithTimeout(`${API_BASE}/api/feedback/dismiss`, {
-          method: 'POST',
-          headers
-        }, 15000);
-      } catch (err) {
-        console.warn('⚠️ Gagal memperbarui dismiss feedback state:', err.message);
-      }
+        await fetchWithTimeout(`${API_BASE}/api/feedback/dismiss`, { method: 'POST', headers }, 15000);
+      } catch (err) { console.warn(err); }
     }
 
     async function submitFeedback() {
       if (isSubmittingFeedback) return;
-      if (!selectedRatingValue) {
-        return alert('Silakan berikan rating 1–5 terlebih dahulu!');
-      }
+      if (!selectedRatingValue) return alert('Silakan berikan rating 1–5 terlebih dahulu!');
 
       isSubmittingFeedback = true;
       const btnSubmit = document.getElementById('btnSubmitFeedback');
-      const btnSkip = document.getElementById('btnSkipFeedback');
-
       btnSubmit.disabled = true;
-      btnSkip.disabled = true;
       btnSubmit.innerText = 'Mengirim...';
 
       try {
         const headers = await getAuthHeaders();
         const res = await fetchWithTimeout(`${API_BASE}/api/feedback/submit`, {
-          method: 'POST',
-          headers,
+          method: 'POST', headers,
           body: JSON.stringify({
             rating: selectedRatingValue,
             questionId: currentFeedbackQuestionId,
@@ -1413,15 +1319,12 @@
 
         const data = await res.json();
         if (!data.success) throw new Error(data.error || 'Gagal menyimpan feedback');
-
         document.getElementById('feedbackModalOverlay').classList.add('hidden');
       } catch (err) {
-        console.error('❌ Submit Feedback Error:', err);
-        alert('Terjadi kesalahan saat mengirim feedback. Silakan coba lagi.');
+        alert('Terjadi kesalahan saat mengirim feedback.');
       } finally {
         isSubmittingFeedback = false;
         btnSubmit.disabled = false;
-        btnSkip.disabled = false;
         btnSubmit.innerText = 'Kirim Feedback';
       }
     }
@@ -1455,57 +1358,18 @@
 
     initTheme();
 
-    function setPlayingState(isPlaying) {
-      const playerCard = document.getElementById('playerCard');
-      if (playerCard) playerCard.classList.toggle('is-playing', isPlaying);
-
-      const activeBubble = document.getElementById(`script-bubble-${currentSegmentIndex}`);
-      if (activeBubble) activeBubble.classList.toggle('is-playing', isPlaying);
-
-      const btn = document.getElementById('btnPlayPauseSegment');
-      if (btn) btn.innerHTML = isPlaying ? '⏸️' : '▶️';
+    function getSelectedDepth() {
+      const checked = document.querySelector('input[name="depthOption"]:checked');
+      return checked ? checked.value : 'balanced';
     }
 
-    segmentAudioPlayer.addEventListener('play', () => setPlayingState(true));
-    segmentAudioPlayer.addEventListener('pause', () => setPlayingState(false));
-
-    segmentAudioPlayer.addEventListener('ended', () => {
-      if (currentSegmentIndex < currentAudioSegments.length - 1) {
-        loadAndPlaySegment(currentSegmentIndex + 1);
-      } else {
-        setPlayingState(false);
-      }
-    });
-
-    segmentAudioPlayer.addEventListener('error', (e) => {
-      console.error('❌ Audio Playback Error:', e);
-      setPlayingState(false);
-      alert('Audio segmen ini tidak dapat diputar. Silakan coba muat ulang segmen.');
-    });
-
-    // ================================================================
-    // 🔧 FIXED: handleFileUpload
-    // Bug lama: blok "catch" selalu menampilkan pesan generik
-    // "ukurannya maksimal 10 MB" untuk SEMUA jenis error (auth expired,
-    // gagal parsing PDF di server, response server tidak valid, network
-    // error, dsb) — sehingga pesan error yang muncul ke user seringkali
-    // TIDAK mencerminkan penyebab aslinya sama sekali.
-    // Fix: cek res.ok/status dulu, tangani gagal parse JSON secara
-    // eksplisit, dan tampilkan pesan error ASLI dari server/exception.
-    // ================================================================
     async function handleFileUpload(event) {
       if (isUploadingFile) return;
-
-      const fileInput = event.target;
-      const file = fileInput.files[0];
+      const file = event.target.files[0];
       if (!file) return;
 
       isUploadingFile = true;
-      const btnSelectFile = document.getElementById('btnSelectFile');
       const fileNameDisplay = document.getElementById('fileNameDisplay');
-
-      btnSelectFile.disabled = true;
-      fileInput.disabled = true;
       fileNameDisplay.innerText = "📖 Membaca " + file.name + "...";
 
       const formData = new FormData();
@@ -1520,84 +1384,29 @@
           throw new Error('AUTH_REQUIRED');
         }
 
-        const res = await fetchWithTimeout(`${API_BASE}/api/extract-file`, {
-          method: 'POST',
-          headers,
-          body: formData
-        }, 45000);
-
-        let data;
-        try {
-          data = await res.json();
-        } catch (parseErr) {
-          // Server tidak balikin JSON (mis. HTML error page dari proxy/host)
-          throw new Error(`Server merespons tidak valid (status ${res.status}). Coba lagi beberapa saat.`);
-        }
-
-        if (!res.ok || !data.success) {
-          // Pakai pesan error ASLI dari backend, sertakan status code untuk debugging
-          throw new Error(data.error ? `${data.error} (status ${res.status})` : `Gagal membaca file (status ${res.status})`);
-        }
+        const res = await fetchWithTimeout(`${API_BASE}/api/extract-file`, { method: 'POST', headers, body: formData }, 45000);
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || 'Gagal membaca file');
 
         document.getElementById('materiInput').value = data.text;
         fileNameDisplay.innerText = "✅ Berhasil diekstrak: " + file.name;
       } catch (err) {
-        console.error('❌ Upload File Error:', err);
         fileNameDisplay.innerText = "❌ Gagal membaca file";
-
-        if (err.message === 'TIMEOUT') {
-          alert('Waktu unggah habis. Silakan coba lagi.');
-        } else if (err.message === 'AUTH_REQUIRED') {
-          alert('Sesi login tidak ditemukan. Silakan login dengan Google terlebih dahulu.');
-        } else {
-          // Tampilkan pesan error ASLI, bukan asumsi generik soal ukuran file
-          alert(err.message || 'File gagal diunggah. Silakan coba lagi.');
-        }
+        alert(err.message || 'File gagal diunggah.');
       } finally {
         isUploadingFile = false;
-        btnSelectFile.disabled = false;
-        fileInput.disabled = false;
-        fileInput.value = '';
+        event.target.value = '';
       }
     }
 
-    // 🎚️ MILESTONE 16: baca pilihan depth dari radio button.
-    // Fallback ke 'balanced' kalau entah kenapa tidak ada yang ke-check.
-    function getSelectedDepth() {
-      const checked = document.querySelector('input[name="depthOption"]:checked');
-      return checked ? checked.value : 'balanced';
-    }
-
-    function setDepthSelectorDisabled(disabled) {
-      document.querySelectorAll('input[name="depthOption"]').forEach(input => {
-        input.disabled = disabled;
-      });
-    }
-
-    // ================================================================
-    // 🔧 REVISI: processPodcast
-    // Bug lama: catch block SELALU menampilkan pesan generik
-    // "Naskah atau audio gagal dibuat" untuk semua jenis error selain
-    // AUTH_EXPIRED/TIMEOUT -- termasuk pesan rate-limit (429) yang
-    // sengaja dirancang informatif dari backend (mis. "Batas harian
-    // tercapai (5/5) ..."), jadi user gak pernah lihat pesan itu.
-    // Fix: fallback ke err.message ASLI kalau bukan salah satu sentinel
-    // value (AUTH_EXPIRED/TIMEOUT) yang memang butuh pesan khusus.
-    //
-    // 🎚️ MILESTONE 16: sekarang juga mengirim `depth` yang dipilih user
-    // ke /api/generate-script, dan menyimpan depth (dari response backend,
-    // bukan nebak ulang dari frontend) ke record podcast di DB.
-    // ================================================================
     async function processPodcast() {
       if (isProcessingPodcast) return;
-
-      const textInput = document.getElementById('materiInput');
-      const text = textInput.value.trim();
+      const text = document.getElementById('materiInput').value.trim();
       if (!text) return alert('Silakan isi teks materi terlebih dahulu atau unggah file PDF/TXT!');
 
       const selectedDepth = getSelectedDepth();
-
       isProcessingPodcast = true;
+
       const btn = document.getElementById('btnGenerate');
       const loading = document.getElementById('loadingStatus');
       const result = document.getElementById('resultContainer');
@@ -1605,27 +1414,21 @@
       const progressBar = document.getElementById('progressBar');
 
       btn.disabled = true;
-      textInput.disabled = true;
-      setDepthSelectorDisabled(true);
       loading.classList.remove('hidden');
       result.classList.add('hidden');
-      document.getElementById('tutorAnswerBox').classList.remove('show');
+      document.getElementById('tutorAnswerBox').classList.add('hidden');
 
       userAnswers = {};
-      document.getElementById('scoreBadge').classList.remove('show');
-
+      document.getElementById('scoreBadge').classList.add('hidden');
       let createdDbPodcastId = null;
 
       try {
         const headers = await getAuthHeaders();
-
         stepText.innerText = "1/3 Sedang meracik naskah & kuis (Gemini AI)...";
         progressBar.style.width = "33%";
 
         const scriptRes = await fetchWithTimeout(`${API_BASE}/api/generate-script`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ text, depth: selectedDepth })
+          method: 'POST', headers, body: JSON.stringify({ text, depth: selectedDepth })
         }, 120000);
         const scriptData = await scriptRes.json();
 
@@ -1641,27 +1444,19 @@
         if (currentUserSession && currentUserSession.user) {
           createdDbPodcastId = await createInitialPodcastRecord(
             'Podcast ' + new Date().toLocaleDateString('id-ID'),
-            text,
-            currentPodcastScript,
-            currentQuizData,
-            resolvedDepth || selectedDepth
+            text, currentPodcastScript, currentQuizData, resolvedDepth || selectedDepth
           );
           currentActivePodcastId = createdDbPodcastId;
         }
 
-        const activePodcastId = createdDbPodcastId || ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'pod_' + Date.now());
+        const activePodcastId = createdDbPodcastId || ('pod_' + Date.now());
 
         stepText.innerText = "2/3 Mengisi suara AI per segmen...";
         progressBar.style.width = "75%";
 
         const segRes = await fetchWithTimeout(`${API_BASE}/api/generate-audio-segments`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ 
-            podcast_script,
-            podcast_id: activePodcastId,
-            depth: resolvedDepth || selectedDepth
-          })
+          method: 'POST', headers,
+          body: JSON.stringify({ podcast_script, podcast_id: activePodcastId, depth: resolvedDepth || selectedDepth })
         }, 180000);
         const segData = await segRes.json();
 
@@ -1679,111 +1474,58 @@
 
         result.classList.remove('hidden');
         loadAndPlaySegment(0, false);
-
       } catch (err) {
-        console.error('❌ Process Podcast Error:', err);
-        if (err.message === 'AUTH_EXPIRED') {
-          alert('Sesi Anda telah berakhir. Silakan login kembali.');
-        } else if (err.message === 'TIMEOUT') {
-          alert('Waktu pemrosesan habis. Silakan coba lagi.');
-        } else {
-          // Tampilkan pesan error ASLI dari backend (termasuk pesan rate-limit 429)
-          alert(err.message || 'Naskah atau audio gagal dibuat. Silakan coba lagi.');
-        }
+        alert(err.message || 'Naskah atau audio gagal dibuat.');
       } finally {
         isProcessingPodcast = false;
         btn.disabled = false;
-        textInput.disabled = false;
-        setDepthSelectorDisabled(false);
         loading.classList.add('hidden');
       }
     }
 
     function renderScriptBox() {
       const scriptBox = document.getElementById('scriptContainer');
-      scriptBox.innerHTML = currentPodcastScript.map((item, idx) => {
-        const speakerClass = item.speaker === 'Rian' ? 'rian' : 'maya';
-        const roleLabel = item.speaker === 'Rian' ? 'Host' : 'Expert';
-        return `
-        <div id="script-bubble-${idx}" onclick="loadAndPlaySegment(${idx})" class="bubble ${speakerClass}">
-          <div class="bubble-head">
-            <span>${item.speaker} · ${roleLabel}</span>
-            <span class="eq"><span></span><span></span><span></span><span></span></span>
-          </div>
-          <p>${item.text}</p>
+      scriptBox.innerHTML = currentPodcastScript.map((item, idx) => `
+        <div id="script-bubble-${idx}" onclick="loadAndPlaySegment(${idx})" class="bubble ${item.speaker === 'Rian' ? 'rian' : 'maya'}">
+          <div style="font-weight:800; font-size:0.75rem; color:var(--primary); margin-bottom:4px;">${item.speaker} · ${item.speaker === 'Rian' ? 'Host' : 'Expert'}</div>
+          <p style="margin:0; font-size:0.9rem; line-height:1.5;">${item.text}</p>
         </div>
-      `;
-      }).join('');
+      `).join('');
     }
 
     function loadAndPlaySegment(index, autoPlay = true) {
       if (!currentAudioSegments || currentAudioSegments.length === 0) return;
-
-      if (segmentAudioPlayer) {
-        segmentAudioPlayer.pause();
-      }
-
-      const prevBubble = document.getElementById(`script-bubble-${currentSegmentIndex}`);
-      if (prevBubble) prevBubble.classList.remove('active-speaking', 'is-playing');
-
       currentSegmentIndex = index;
       const targetSeg = currentAudioSegments[index];
 
-      const bubble = document.getElementById(`script-bubble-${index}`);
-      if (bubble) bubble.classList.add('active-speaking');
-
-      document.getElementById('segmentIndicator').innerHTML =
-        `<span class="eq"><span></span><span></span><span></span><span></span></span> Segmen ${index + 1} / ${currentAudioSegments.length}`;
-
+      document.getElementById('segmentIndicator').innerText = `Segmen ${index + 1} / ${currentAudioSegments.length}`;
       const isFullUrl = targetSeg.audioUrl.startsWith('http://') || targetSeg.audioUrl.startsWith('https://');
       segmentAudioPlayer.src = isFullUrl ? targetSeg.audioUrl : `${API_BASE}${targetSeg.audioUrl}`;
-
       segmentAudioPlayer.playbackRate = currentPlaybackRate;
+
       savePlaybackProgress(index);
 
-      if (autoPlay) {
-        segmentAudioPlayer.play().catch(err => {
-          console.warn('⚠️ Autoplay diblokir browser:', err);
-        });
-      }
+      if (autoPlay) segmentAudioPlayer.play().catch(e => console.warn(e));
     }
 
     function togglePlayPauseSegment() {
-      if (segmentAudioPlayer.paused) {
-        segmentAudioPlayer.play().catch(err => console.warn('⚠️ Gagal play audio:', err));
-      } else {
-        segmentAudioPlayer.pause();
-      }
+      if (segmentAudioPlayer.paused) segmentAudioPlayer.play();
+      else segmentAudioPlayer.pause();
     }
 
-    function prevSegment() {
-      if (currentSegmentIndex > 0) loadAndPlaySegment(currentSegmentIndex - 1);
-    }
-
-    function nextSegment() {
-      if (currentSegmentIndex < currentAudioSegments.length - 1) loadAndPlaySegment(currentSegmentIndex + 1);
-    }
-
+    function prevSegment() { if (currentSegmentIndex > 0) loadAndPlaySegment(currentSegmentIndex - 1); }
+    function nextSegment() { if (currentSegmentIndex < currentAudioSegments.length - 1) loadAndPlaySegment(currentSegmentIndex + 1); }
     function setSpeed(speed) {
       currentPlaybackRate = speed;
       segmentAudioPlayer.playbackRate = speed;
-
       document.querySelectorAll('.speed-btn').forEach(btn => {
         btn.classList.toggle('active', parseFloat(btn.innerText) === speed);
       });
     }
 
-    // ================================================================
-    // 🔧 REVISI: askTutorAI
-    // Sama seperti processPodcast -- tampilkan pesan error ASLI dari
-    // backend (termasuk pesan rate-limit 429 "Batas harian tanya Tutor
-    // AI tercapai...") alih-alih pesan generik.
-    // ================================================================
     async function askTutorAI() {
       if (isAskingAI) return;
-
-      const qInput = document.getElementById('questionInput');
-      const question = qInput.value.trim();
+      const question = document.getElementById('questionInput').value.trim();
       const sourceMaterial = document.getElementById('materiInput').value.trim();
 
       if (!question) return alert('Silakan ketikkan pertanyaan Anda terlebih dahulu.');
@@ -1791,63 +1533,33 @@
       isAskingAI = true;
       segmentAudioPlayer.pause();
 
-      const btnAsk = document.getElementById('btnAskQuestion');
       const answerBox = document.getElementById('tutorAnswerBox');
       const answerText = document.getElementById('tutorAnswerText');
 
-      btnAsk.disabled = true;
-      qInput.disabled = true;
-      btnAsk.innerText = 'Memproses...';
-      answerBox.classList.add('show');
+      answerBox.classList.remove('hidden');
       answerText.innerText = '🤔 Tutor AI sedang berpikir...';
 
       try {
         const headers = await getAuthHeaders();
-
         const res = await fetchWithTimeout(`${API_BASE}/api/ask-question`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            question,
-            currentIndex: currentSegmentIndex,
-            podcastScript: currentPodcastScript,
-            sourceMaterial
-          })
+          method: 'POST', headers,
+          body: JSON.stringify({ question, currentIndex: currentSegmentIndex, podcastScript: currentPodcastScript, sourceMaterial })
         }, 45000);
 
         const data = await res.json();
         if (!data.success) throw new Error(data.error || 'Gagal mendapatkan jawaban');
 
         answerText.innerText = data.answer;
-        qInput.value = '';
+        document.getElementById('questionInput').value = '';
       } catch (err) {
-        console.error('❌ Ask Tutor AI Error:', err);
-        if (err.message === 'AUTH_EXPIRED') {
-          answerText.innerText = '❌ Sesi Anda telah berakhir. Silakan login kembali.';
-        } else if (err.message === 'TIMEOUT') {
-          answerText.innerText = '❌ Waktu permintaan habis. Silakan coba lagi.';
-        } else {
-          // Tampilkan pesan error ASLI dari backend (termasuk pesan rate-limit 429)
-          answerText.innerText = '❌ ' + (err.message || 'Jawaban AI gagal dimuat. Silakan coba lagi.');
-        }
+        answerText.innerText = '❌ ' + (err.message || 'Jawaban AI gagal dimuat.');
       } finally {
         isAskingAI = false;
-        qInput.disabled = false;
-        btnAsk.disabled = false;
-        btnAsk.innerText = 'Tanya';
       }
     }
 
-    // ================================================================
-    // 🔧 REVISI: downloadFullPodcast
-    // Sama seperti processPodcast/askTutorAI -- endpoint ini balikin
-    // JSON (bukan langsung file) kalau gagal (termasuk rate-limit 429),
-    // jadi perlu cek content-type dulu sebelum treat response sebagai
-    // blob MP3, supaya pesan error ASLI dari backend bisa ditampilkan.
-    // ================================================================
     async function downloadFullPodcast() {
       if (isDownloadingMP3) return;
-
       isDownloadingMP3 = true;
       const btn = document.getElementById('btnDownloadFull');
       btn.disabled = true;
@@ -1855,21 +1567,11 @@
 
       try {
         const headers = await getAuthHeaders();
-
         const res = await fetchWithTimeout(`${API_BASE}/api/generate-full-podcast`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ podcast_script: currentPodcastScript })
+          method: 'POST', headers, body: JSON.stringify({ podcast_script: currentPodcastScript })
         }, 180000);
 
-        if (!res.ok) {
-          const contentType = res.headers.get('content-type') || '';
-          if (contentType.includes('application/json')) {
-            const errData = await res.json();
-            throw new Error(errData.error || 'Gagal membuat full podcast MP3');
-          }
-          throw new Error('Gagal membuat full podcast MP3');
-        }
+        if (!res.ok) throw new Error('Gagal membuat full podcast MP3');
 
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
@@ -1879,15 +1581,7 @@
         a.click();
         URL.revokeObjectURL(url);
       } catch (err) {
-        console.error('❌ Download MP3 Error:', err);
-        if (err.message === 'AUTH_EXPIRED') {
-          alert('Sesi Anda telah berakhir. Silakan login kembali.');
-        } else if (err.message === 'TIMEOUT') {
-          alert('Waktu penggabungan audio habis. Silakan coba lagi.');
-        } else {
-          // Tampilkan pesan error ASLI dari backend (termasuk pesan rate-limit 429)
-          alert(err.message || 'Audio gagal dibuat. Silakan coba lagi.');
-        }
+        alert(err.message || 'Audio gagal dibuat.');
       } finally {
         isDownloadingMP3 = false;
         btn.disabled = false;
@@ -1908,11 +1602,9 @@
     function isAnswerMatch(q, optText, optKey) {
       const rawAns = (q.answer || '').trim();
       const letterOnly = rawAns.replace(/[^A-Za-z]/g, '');
-
       if (letterOnly.length === 1 && rawAns.length <= 3) {
         return letterOnly.toUpperCase() === optKey;
       }
-
       return stripLetterPrefix(rawAns) === stripLetterPrefix(optText);
     }
 
@@ -1920,7 +1612,7 @@
       const quizBox = document.getElementById('quizContainer');
       quizBox.innerHTML = currentQuizData.map((q, qIdx) => `
         <div class="quiz-item">
-          <p class="quiz-question">${qIdx + 1}. ${q.question}</p>
+          <p style="font-weight:700; font-size:0.9rem; margin:0 0 10px;">${qIdx + 1}. ${q.question}</p>
           <div class="quiz-options">
             ${q.options.map((opt, optIdx) => {
               const optKey = extractOptionKey(opt, optIdx);
@@ -1965,7 +1657,7 @@
 
         document.getElementById('scoreValue').innerText = correctCount;
         document.getElementById('totalQuestions').innerText = currentQuizData.length;
-        document.getElementById('scoreBadge').classList.add('show');
+        document.getElementById('scoreBadge').classList.remove('hidden');
       }
     }
   </script>
