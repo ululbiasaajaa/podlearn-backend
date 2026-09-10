@@ -58,7 +58,15 @@ ffmpeg.setFfmpegPath(ffmpegInstaller);
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
-app.use(express.static('.'));
+// 🔧 FIX (Security): static('.') sebelumnya serve SELURUH folder project,
+// termasuk index.js (source code backend) dan me-shadow route
+// '/temp-audio' di bawah (karena express.static('.') match & handle
+// request DULUAN sebelum sempat nyampe ke route yang ada requireAuth-nya
+// -- akibatnya audio segmen siapa aja bisa diakses tanpa login, asal tau
+// nama filenya). Sekarang cuma index.html yang diserve secara eksplisit.
+app.get('/', (req, res) => {
+  res.sendFile(path.resolve(process.cwd(), 'index.html'));
+});
 
 // ============================================================
 // 🔒 SUPABASE CONFIG & CLIENTS (Strict Environment Variable)
