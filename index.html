@@ -169,13 +169,8 @@
       display: flex;
       align-items: center;
       gap: 12px;
-      /* 🔧 FIX: brand TIDAK lagi ikut menyusut (flex: 0 0 auto). Sebelumnya
-         brand & header-actions sama-sama boleh menyusut, tapi karena
-         header-actions dikunci flex-shrink:0, semua tekanan penyusutan
-         malah numpuk ke brand sampai judul "PodLearn" kepotong jadi "P."
-         Sekarang yang menyusut adalah email di dalam header-actions
-         (lihat #userEmailText), bukan judul app. */
-      flex: 0 0 auto;
+      flex: 1 1 auto;
+      min-width: 0;
     }
 
     .brand-mark {
@@ -220,12 +215,7 @@
       display: flex;
       align-items: center;
       gap: 12px;
-      /* 🔧 FIX: dulu flex-shrink:0 di sini yang bikin brand title kepotong
-         (lihat komentar di .brand). Sekarang header-actions boleh
-         menyusut sebagai wadah, tapi child di dalamnya (#userInfo,
-         .theme-toggle) yang mengatur sendiri bagian mana yang boleh
-         menyusut (email) dan mana yang harus tetap utuh (tombol). */
-      flex: 1 1 auto;
+      flex: 0 0 auto;
       min-width: 0;
       justify-content: flex-end;
     }
@@ -234,24 +224,25 @@
       display: flex;
       align-items: center;
       min-width: 0;
-      flex: 1 1 auto;
-      justify-content: flex-end;
     }
 
     #userInfo {
       min-width: 0;
     }
 
+    /* Email bisa sangat panjang; potong dengan ellipsis supaya tidak
+       mendorong tombol Logout/theme-toggle keluar area yang kelihatan. */
     #userEmailText {
       display: inline-block;
-      max-width: 34vw;
+      max-width: 100%;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
       vertical-align: middle;
     }
 
-    #btnLogout {
+    #btnLogout,
+    #btnLoginGoogle {
       flex-shrink: 0;
     }
 
@@ -271,12 +262,6 @@
       flex-shrink: 0;
     }
     .theme-toggle:hover { transform: scale(1.05); }
-
-    /* Label penuh vs singkat pada tombol login, supaya di layar sempit
-       tombol ini nggak makan lebar berlebih dan mendorong theme-toggle
-       keluar area yang kelihatan (overflow-x: hidden di body bikin
-       elemen yang terdorong itu ke-clip, bukan wrap ke baris baru). */
-    .login-text-short { display: none; }
 
     /* ---------- Equalizer ---------- */
     .eq {
@@ -707,19 +692,49 @@
       .hero-title { font-size: 1.35rem; }
     }
 
-    /* 🔧 FIX (Mobile): di layar sempit, brand title/subtitle + tombol
-       login + theme-toggle gampang lebih lebar dari viewport. Karena
-       .site-header flex nowrap dan body punya overflow-x:hidden, bagian
-       yang "kepentok" itu ke-clip diam-diam alih-alih wrap ke baris baru
-       -- ini yang bikin tombol theme-toggle ketutup/hilang di HP.
-       Fix: brand title dipersingkat via ellipsis (sudah di atas), dan
-       label tombol login diperpendek supaya theme-toggle selalu punya
-       ruang dan tetap kelihatan. */
-    @media (max-width: 480px) {
-      .login-text-full { display: none; }
-      .login-text-short { display: inline; }
-      .site-header { gap: 10px; }
-      .header-actions { gap: 8px; }
+    /* 🔧 FIX (Mobile): di layar sempit, brand (logo + judul + subtitle)
+       bareng tombol login/email + Logout + theme-toggle SELALU lebih
+       lebar dari viewport. Karena .site-header itu flex satu baris dan
+       body punya overflow-x:hidden, kelebihannya ke-clip diam-diam --
+       bikin theme-toggle ketutup, atau (kalau brand yang dipaksa
+       mengalah) judul kepotong jadi "P."
+       Solusi: berhenti memperebutkan satu baris. Di layar <=640px
+       header dipecah jadi DUA baris penuh -- brand di atas, tombol aksi
+       di bawah -- jadi masing-masing dapat lebar penuh dan tidak ada
+       yang perlu dikorbankan. */
+    @media (max-width: 640px) {
+      .site-header {
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      .brand {
+        flex: 1 1 100%;
+      }
+
+      .header-actions {
+        flex: 1 1 100%;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      #authContainer {
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+
+      #userInfo {
+        width: 100%;
+      }
+
+      /* Judul & subtitle tidak perlu dipotong lagi karena sudah dapat
+         satu baris penuh untuk dirinya sendiri. */
+      .brand-copy h1,
+      .brand-copy p {
+        white-space: normal;
+        overflow: visible;
+        text-overflow: clip;
+      }
     }
   </style>
 </head>
@@ -754,8 +769,7 @@
       <div class="header-actions">
         <div id="authContainer">
           <button id="btnLoginGoogle" onclick="loginWithGoogle()" class="btn btn-ghost btn-sm">
-            <span class="login-text-full">🔵 Login dengan Google</span>
-            <span class="login-text-short">🔵 Login</span>
+            🔵 Login dengan Google
           </button>
           <div id="userInfo" class="hidden" style="display: flex; align-items: center; gap: 8px;">
             <span id="userEmailText" style="font-size: 0.8rem; font-weight: 700; color: var(--ink-soft);"></span>
