@@ -169,8 +169,13 @@
       display: flex;
       align-items: center;
       gap: 12px;
-      flex: 1 1 auto;
-      min-width: 0;
+      /* 🔧 FIX: brand TIDAK lagi ikut menyusut (flex: 0 0 auto). Sebelumnya
+         brand & header-actions sama-sama boleh menyusut, tapi karena
+         header-actions dikunci flex-shrink:0, semua tekanan penyusutan
+         malah numpuk ke brand sampai judul "PodLearn" kepotong jadi "P."
+         Sekarang yang menyusut adalah email di dalam header-actions
+         (lihat #userEmailText), bukan judul app. */
+      flex: 0 0 auto;
     }
 
     .brand-mark {
@@ -215,6 +220,38 @@
       display: flex;
       align-items: center;
       gap: 12px;
+      /* 🔧 FIX: dulu flex-shrink:0 di sini yang bikin brand title kepotong
+         (lihat komentar di .brand). Sekarang header-actions boleh
+         menyusut sebagai wadah, tapi child di dalamnya (#userInfo,
+         .theme-toggle) yang mengatur sendiri bagian mana yang boleh
+         menyusut (email) dan mana yang harus tetap utuh (tombol). */
+      flex: 1 1 auto;
+      min-width: 0;
+      justify-content: flex-end;
+    }
+
+    #authContainer {
+      display: flex;
+      align-items: center;
+      min-width: 0;
+      flex: 1 1 auto;
+      justify-content: flex-end;
+    }
+
+    #userInfo {
+      min-width: 0;
+    }
+
+    #userEmailText {
+      display: inline-block;
+      max-width: 34vw;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      vertical-align: middle;
+    }
+
+    #btnLogout {
       flex-shrink: 0;
     }
 
