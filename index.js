@@ -49,6 +49,31 @@ if (!PDFParseClass) {
   console.error('❌ Class PDFParse tidak ditemukan di package "pdf-parse". Cek versi package yang ter-install.');
 }
 
+// ============================================================
+// 🔧 PPTX PARSER (officeparser)
+//
+// PENTING: .pptx BUKAN format biner tertutup -- dia sebenarnya file ZIP
+// yang isinya XML per slide (slide1.xml, slide2.xml, dst). Karena itu
+// TIDAK PERLU convert ke PDF dulu (yang butuh LibreOffice/headless
+// renderer, binary berat, dan boundary antar-slide nya pun nggak
+// terjamin rapi setelah jadi PDF). Cukup extract teks langsung dari
+// struktur XML-nya pakai "officeparser" -- murni JS, tanpa dependency
+// binary eksternal.
+//
+// API: officeParser.parseOfficeAsync(filePathOrBuffer) -> Promise<string>
+// ============================================================
+let officeParser = null;
+
+try {
+  officeParser = require('officeparser');
+} catch (err) {
+  console.error('❌ Gagal memuat library officeparser:', err.message);
+}
+
+if (!officeParser) {
+  console.error('❌ Library officeparser tidak ditemukan. Upload .pptx akan gagal sampai package ini ter-install.');
+}
+
 // Single Source of Truth untuk Model Gemini
 const GEMINI_MODEL = 'gemini-3.6-flash';
 
@@ -147,17 +172,21 @@ if (!fs.existsSync(uploadsDir)) {
 // 🔒 PROTECTED Fallback Static Audio Server (Requires JWT Authorization)
 app.use('/temp-audio', requireAuth, express.static(tempAudioDir));
 
-// File Upload Config (Max 10MB & Filter PDF/TXT Only)
+// File Upload Config (Max 10MB & Filter PDF/TXT/PPTX Only)
 const upload = multer({
   dest: 'uploads/',
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    const allowedMimes = ['application/pdf', 'text/plain'];
+    const allowedMimes = [
+      'application/pdf',
+      'text/plain',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation' // .pptx
+    ];
     const ext = path.extname(file.originalname).toLowerCase();
-    if (allowedMimes.includes(file.mimetype) || ext === '.pdf' || ext === '.txt') {
+    if (allowedMimes.includes(file.mimetype) || ext === '.pdf' || ext === '.txt' || ext === '.pptx') {
       return cb(null, true);
     }
-    cb(new Error('Hanya file PDF dan TXT yang diperbolehkan.'));
+    cb(new Error('Hanya file PDF, TXT, dan PPTX yang diperbolehkan.'));
   }
 });
 
@@ -575,6 +604,45 @@ app.post('/api/extract-file', requireAuth, upload.single('file'), async (req, re
       }
     } else if (originalName.endsWith('.txt') || fileMime === 'text/plain') {
       extractedText = fs.readFileSync(filePath, 'utf8');
+    } else if (
+      originalName.endsWith('.pptx') ||
+      fileMime === 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+    ) {
+      if (!officeParser) {
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        return res.status(500).json({ success: false, error: 'Library PPTX parser belum siap.' });
+      }
+
+      // 🔧 PPTX di-parse langsung dari struktur ZIP/XML-nya (tidak lewat
+      // convert ke PDF), lihat komentar di deklarasi officeParser di atas.
+      //
+      // ⚠️ BREAKING CHANGE (officeparser v5+ / rewrite total di v7.x):
+      // API lama `parseOfficeAsync(path)` dulu balikin STRING langsung.
+      // Versi yang ter-install sekarang (^7.8.0) balikin AST OBJECT --
+      // teksnya wajib diambil lewat method `.toText()` pada hasilnya.
+      // Kalau ini dibiarkan pakai API lama, extractedText bakal berisi
+      // "[object Object]", bukan teks asli.
+      //
+      // Defensif terhadap 2 kemungkinan bentuk export (top-level
+      // `officeParser.parseOffice` ATAU named export `OfficeParser.parseOffice`)
+      // karena dokumentasi resminya sendiri menunjukkan dua pola berbeda.
+      try {
+        const parseOfficeFn =
+          (typeof officeParser.parseOffice === 'function' && officeParser.parseOffice) ||
+          (officeParser.OfficeParser && typeof officeParser.OfficeParser.parseOffice === 'function' && officeParser.OfficeParser.parseOffice);
+
+        if (!parseOfficeFn) {
+          throw new Error('Fungsi parseOffice tidak ditemukan pada package officeparser yang ter-install.');
+        }
+
+        const ast = await parseOfficeFn(filePath);
+        extractedText = (ast && typeof ast.toText === 'function') ? ast.toText() : String(ast ?? '');
+      } catch (parseErr) {
+        console.error('❌ [PPTX Parse Error] name:', parseErr?.name);
+        console.error('❌ [PPTX Parse Error] message:', parseErr?.message);
+        console.error('❌ [PPTX Parse Error] stack:', parseErr?.stack);
+        throw parseErr;
+      }
     } else {
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
       return res.status(400).json({ success: false, error: 'Format file tidak didukung.' });
@@ -591,7 +659,7 @@ app.post('/api/extract-file', requireAuth, upload.single('file'), async (req, re
     if (!cleanExtractedText) {
       return res.status(400).json({
         success: false,
-        error: 'File PDF berupa scan gambar atau tidak mengandung teks terbaca.'
+        error: 'Dokumen tidak mengandung teks terbaca (mungkin berupa hasil scan gambar atau slide kosong).'
       });
     }
 
@@ -606,7 +674,7 @@ app.post('/api/extract-file', requireAuth, upload.single('file'), async (req, re
 
     return res.status(500).json({
       success: false,
-      error: 'Gagal membaca dokumen. Pastikan PDF berisikan teks biasa dan tidak dilindungi sandi.'
+      error: 'Gagal membaca dokumen. Pastikan file tidak rusak dan tidak dilindungi sandi.'
     });
   }
 });

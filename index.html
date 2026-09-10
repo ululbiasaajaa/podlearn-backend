@@ -800,8 +800,8 @@
       <div class="dropzone" onclick="document.getElementById('pdfFileInput').click()">
         <div class="dropzone-icon">☁️</div>
         <p class="dropzone-text">Tarik & lepas dokumen di sini, atau <span style="color: var(--primary);">pilih file</span></p>
-        <p class="dropzone-sub">Mendukung format PDF atau TXT (Maks. 10MB)</p>
-        <input type="file" id="pdfFileInput" accept=".pdf,.txt" class="hidden" onchange="handleFileUpload(event)">
+        <p class="dropzone-sub">Mendukung format PDF, PPTX, atau TXT (Maks. 10MB)</p>
+        <input type="file" id="pdfFileInput" accept=".pdf,.txt,.pptx" class="hidden" onchange="handleFileUpload(event)">
       </div>
       <div id="fileNameDisplay" style="margin-top: 6px; font-size: 0.8rem; color: var(--ink-soft); font-style: italic;">Belum ada file dipilih</div>
 
@@ -1554,7 +1554,7 @@
       if (isProcessingPodcast) return;
       const textInput = document.getElementById('materiInput');
       const text = textInput.value.trim();
-      if (!text) return alert('Silakan isi teks materi terlebih dahulu atau unggah file PDF/TXT!');
+      if (!text) return alert('Silakan isi teks materi terlebih dahulu atau unggah file PDF/PPTX/TXT!');
 
       const selectedDepth = getSelectedDepth();
       isProcessingPodcast = true;

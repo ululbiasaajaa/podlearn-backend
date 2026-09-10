@@ -23,6 +23,7 @@
     "gtts": "^0.2.1",
     "multer": "^2.2.0",
     "node-edge-tts": "^1.2.10",
+    "officeparser": "^7.8.0",
     "pdf-parse": "^2.4.5"
   }
 }
