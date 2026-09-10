@@ -178,6 +178,51 @@ setInterval(() => {
 // ============================================
 // 🔑 API KEY POOL & ROTATION (Server Side Only)
 // ============================================
+// ============================================================
+// 🎧 TTS BATCHED CONCURRENCY (menggantikan sequential for-loop)
+// ============================================================
+// Batch size sengaja dibikin KONSERVATIF (default 3), bukan Promise.all
+// polos ke semua segmen sekaligus -- karena EdgeTTS ini manggil endpoint
+// Microsoft yang undocumented buat pemakaian kayak gini, dan kita ga tau
+// batas aman rate/concurrent connection-nya di deployment ini. Batch
+// kecil + berurutan antar-batch = balance antara "lebih cepat dari
+// sequential" dan "ga nembak semua sekaligus dan berisiko kena
+// throttle/connection error".
+//
+// Bisa dioverride lewat env var TTS_BATCH_SIZE tanpa perlu redeploy kode.
+const TTS_BATCH_SIZE = parseInt(process.env.TTS_BATCH_SIZE || '3', 10);
+
+/**
+ * Jalankan `taskFn` untuk tiap item di `items` secara batched (bukan
+ * sequential satu-satu, bukan juga Promise.all ke semuanya sekaligus).
+ *
+ * PENTING soal urutan: hasil akhir array `results` dijamin urut sesuai
+ * index asli item di `items` -- BUKAN sesuai urutan selesai (completion
+ * order). Ini karena di dalam satu batch, Promise.all() selalu
+ * mengembalikan hasil di posisi yang sama dengan urutan promise yang
+ * dimasukkan, walau promise mana yang selesai duluan itu random. Dan
+ * antar-batch, batch berikutnya baru mulai setelah batch sebelumnya
+ * settle semua. Jadi hasil.push per batch, digabung berurutan, otomatis
+ * tetap by-index -- ga perlu sorting manual di akhir.
+ *
+ * `taskFn(item, index)` boleh return `null`/`undefined` untuk item yang
+ * di-skip (mis. item tanpa `.text`), nanti otomatis di-filter.
+ */
+async function runInBatches(items, batchSize, taskFn) {
+  const results = [];
+  for (let batchStart = 0; batchStart < items.length; batchStart += batchSize) {
+    const batchItems = items.slice(batchStart, batchStart + batchSize);
+    const batchPromises = batchItems.map((item, offsetInBatch) =>
+      taskFn(item, batchStart + offsetInBatch)
+    );
+    const batchResults = await Promise.all(batchPromises);
+    batchResults.forEach((r) => {
+      if (r !== null && r !== undefined) results.push(r);
+    });
+  }
+  return results;
+}
+
 const apiKeys = (process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || '')
   .split(',')
   .map(k => k.trim())
@@ -680,19 +725,19 @@ app.post('/api/generate-audio-segments', requireAuth, async (req, res) => {
       return res.status(400).json({ success: false, error: 'Array podcast_script wajib diisi!' });
     }
 
-    // 📊 BENCHMARK (belum ada perubahan behavior -- masih sequential persis
-    // seperti sebelumnya). Ini murni instrumentasi buat ngukur baseline
-    // "sequential" sebelum kita implementasi batched concurrency, sesuai
-    // urutan: benchmark dulu, baru optimize.
+    // 📊 BENCHMARK: sekarang mode=batched (sebelumnya sequential). Bandingkan
+    // ttsDurationMs ini dengan baseline sequential yang udah kita punya
+    // (Ringkas 30.2s / Standar 69.3s / Mendalam 80.9s).
     const ttsStart = Date.now();
     const segmentCount = podcast_script.length;
 
-    const segments = [];
     const userSupabase = req.supabase;
 
-    for (let i = 0; i < podcast_script.length; i++) {
-      const item = podcast_script[i];
-      if (!item || !item.text) continue;
+    // Task per-segmen: generate TTS + upload ke storage (kalau login).
+    // Return null buat item yang di-skip (tanpa .text) -- runInBatches
+    // otomatis nge-filter null ini.
+    const synthesizeOneSegment = async (item, index) => {
+      if (!item || !item.text) return null;
 
       let selectedVoice = 'id-ID-ArdiNeural';
       if (item.speaker === 'Maya') {
@@ -706,23 +751,21 @@ app.post('/api/generate-audio-segments', requireAuth, async (req, res) => {
         timeout: 30000
       });
 
-      const uniqueFilename = `segment_${i}_${crypto.randomUUID()}.mp3`;
+      const uniqueFilename = `segment_${index}_${crypto.randomUUID()}.mp3`;
       const absolutePath = path.resolve(tempAudioDir, uniqueFilename);
       let finalAudioUrl = `/temp-audio/${uniqueFilename}`;
-
-      await new Promise(r => setTimeout(r, 150));
 
       try {
         await tts.ttsPromise(item.text, absolutePath);
         createdTempFiles.push(absolutePath);
       } catch (ttsError) {
-        console.error(`❌ [TTS Segments] Segmen ${i} gagal`);
+        console.error(`❌ [TTS Segments Batched] Segmen ${index} gagal`);
         throw ttsError;
       }
 
       if (userId && userSupabase) {
         try {
-          const storagePath = `${userId}/${podcast_id}/segment_${i}.mp3`;
+          const storagePath = `${userId}/${podcast_id}/segment_${index}.mp3`;
           const fileBuffer = fs.readFileSync(absolutePath);
 
           const { error: uploadError } = await userSupabase.storage
@@ -750,19 +793,25 @@ app.post('/api/generate-audio-segments', requireAuth, async (req, res) => {
         }
       }
 
-      segments.push({
-        index: i,
+      return {
+        index,
         speaker: item.speaker || 'Host',
         audioUrl: finalAudioUrl
-      });
-    }
+      };
+    };
+
+    // Kalau salah satu segmen di dalam batch gagal, Promise.all() di dalam
+    // runInBatches otomatis reject -- melempar error ke luar persis kayak
+    // `throw ttsError` di versi sequential dulu, jadi behavior kegagalannya
+    // konsisten (satu segmen gagal = seluruh request gagal).
+    const segments = await runInBatches(podcast_script, TTS_BATCH_SIZE, synthesizeOneSegment);
 
     // 📊 BENCHMARK: catat durasi total TTS. `depth` di sini cuma label buat
     // korelasi log (dikirim opsional dari frontend) -- TIDAK mempengaruhi
     // logic sama sekali, cuma metadata.
     const ttsEnd = Date.now();
     const ttsDuration = ttsEnd - ttsStart;
-    console.log(`📊 [TTS Benchmark] mode=sequential depth=${depth || 'unknown'} segmentCount=${segmentCount} ttsDurationMs=${ttsDuration}`);
+    console.log(`📊 [TTS Benchmark] mode=batched batchSize=${TTS_BATCH_SIZE} depth=${depth || 'unknown'} segmentCount=${segmentCount} ttsDurationMs=${ttsDuration}`);
 
     res.json({
       success: true,
@@ -834,9 +883,16 @@ app.post('/api/generate-full-podcast', requireAuth, async (req, res) => {
       });
     }
 
-    for (let i = 0; i < podcast_script.length; i++) {
-      const item = podcast_script[i];
-      if (!item || !item.text) continue;
+    // 📊 BENCHMARK: sama kayak generate-audio-segments, sekarang batched.
+    // Urutan tempFiles WAJIB tetap sesuai urutan playback podcast (index),
+    // karena FFmpeg concat menggabungkan file persis sesuai urutan di
+    // listFilePath -- runInBatches menjamin ini (lihat komentar di
+    // definisinya), jadi aman dipakai di sini juga.
+    const ttsStart = Date.now();
+    const segmentCount = podcast_script.length;
+
+    const synthesizeOneFullSegment = async (item, index) => {
+      if (!item || !item.text) return null;
 
       const selectedVoice = (item.speaker === 'Rian') ? 'id-ID-ArdiNeural' : 'id-ID-GadisNeural';
 
@@ -847,18 +903,22 @@ app.post('/api/generate-full-podcast', requireAuth, async (req, res) => {
         timeout: 30000
       });
 
-      const tempPath = path.resolve(process.cwd(), `temp_${i}_${crypto.randomUUID()}.mp3`);
-
-      await new Promise(r => setTimeout(r, 150));
+      const tempPath = path.resolve(process.cwd(), `temp_${index}_${crypto.randomUUID()}.mp3`);
 
       try {
         await tts.ttsPromise(item.text, tempPath);
-        tempFiles.push(tempPath);
+        return tempPath;
       } catch (ttsError) {
-        console.error(`❌ [TTS Full] Segmen ${i} gagal`);
+        console.error(`❌ [TTS Full Batched] Segmen ${index} gagal`);
         throw ttsError;
       }
-    }
+    };
+
+    const batchedTempFiles = await runInBatches(podcast_script, TTS_BATCH_SIZE, synthesizeOneFullSegment);
+    tempFiles.push(...batchedTempFiles);
+
+    const ttsDuration = Date.now() - ttsStart;
+    console.log(`📊 [TTS Benchmark - Full Podcast] mode=batched batchSize=${TTS_BATCH_SIZE} segmentCount=${segmentCount} ttsDurationMs=${ttsDuration}`);
 
     const fileListContent = tempFiles
       .map(f => `file '${f.replace(/\\/g, '/')}'`)

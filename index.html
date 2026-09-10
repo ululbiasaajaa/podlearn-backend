@@ -497,6 +497,8 @@
     .btn-block { width: 100%; padding: 14px; font-size: 0.95rem; }
     .btn-sm { padding: 8px 14px; font-size: 0.8rem; border-radius: var(--radius-sm); }
 
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
     .btn-circle {
       border-radius: 50%;
       width: 48px;
@@ -574,6 +576,8 @@
     .bubble.rian { border-left-color: #6366F1; }
     .bubble.maya { border-left-color: #10B981; }
     .bubble.active-speaking { box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2); }
+    .bubble .bubble-eq { display: none; margin-left: 8px; color: var(--primary); }
+    .bubble.is-playing .bubble-eq { display: inline-flex; }
 
     .quiz-item {
       background: var(--surface);
@@ -1190,7 +1194,13 @@
 
         await loadUserPodcasts();
       } catch (err) {
-        alert(err.message || 'Podcast gagal dihapus. Silakan coba lagi.');
+        if (err.message === 'AUTH_EXPIRED') {
+          alert('Sesi Anda telah berakhir. Silakan login kembali.');
+        } else if (err.message === 'TIMEOUT') {
+          alert('Waktu permintaan habis saat menghapus. Silakan coba lagi.');
+        } else {
+          alert(err.message || 'Podcast gagal dihapus. Silakan coba lagi.');
+        }
       } finally {
         activeDeletingPodcastIds.delete(podcastId);
         renderPodcastHistory(userPodcastsList);
@@ -1358,11 +1368,56 @@
 
     initTheme();
 
+    function setPlayingState(isPlaying) {
+      const playerCard = document.getElementById('playerCard');
+      if (playerCard) playerCard.classList.toggle('is-playing', isPlaying);
+
+      const activeBubble = document.getElementById(`script-bubble-${currentSegmentIndex}`);
+      if (activeBubble) activeBubble.classList.toggle('is-playing', isPlaying);
+
+      const btn = document.getElementById('btnPlayPauseSegment');
+      if (btn) btn.innerHTML = isPlaying ? '⏸️' : '▶️';
+    }
+
+    segmentAudioPlayer.addEventListener('play', () => setPlayingState(true));
+    segmentAudioPlayer.addEventListener('pause', () => setPlayingState(false));
+
+    segmentAudioPlayer.addEventListener('ended', () => {
+      if (currentSegmentIndex < currentAudioSegments.length - 1) {
+        loadAndPlaySegment(currentSegmentIndex + 1);
+      } else {
+        setPlayingState(false);
+      }
+    });
+
+    segmentAudioPlayer.addEventListener('error', (e) => {
+      console.error('❌ Audio Playback Error:', e);
+      setPlayingState(false);
+      alert('Audio segmen ini tidak dapat diputar. Silakan coba muat ulang segmen.');
+    });
+
     function getSelectedDepth() {
       const checked = document.querySelector('input[name="depthOption"]:checked');
       return checked ? checked.value : 'balanced';
     }
 
+    function setDepthSelectorDisabled(disabled) {
+      document.querySelectorAll('input[name="depthOption"]').forEach(input => {
+        input.disabled = disabled;
+      });
+      document.querySelectorAll('.depth-card').forEach(card => {
+        card.style.pointerEvents = disabled ? 'none' : '';
+        card.style.opacity = disabled ? '0.6' : '';
+      });
+    }
+
+    // ================================================================
+    // 🔧 handleFileUpload -- ditambal balik: cek res.ok/status dulu dan
+    // tangani gagal parse JSON secara eksplisit (mis. proxy/host balikin
+    // halaman HTML error, bukan JSON asli), sebelum treat response
+    // sebagai sukses/gagal. Tanpa ini, error asli dari server ketutup
+    // pesan generik.
+    // ================================================================
     async function handleFileUpload(event) {
       if (isUploadingFile) return;
       const file = event.target.files[0];
@@ -1385,23 +1440,46 @@
         }
 
         const res = await fetchWithTimeout(`${API_BASE}/api/extract-file`, { method: 'POST', headers, body: formData }, 45000);
-        const data = await res.json();
-        if (!res.ok || !data.success) throw new Error(data.error || 'Gagal membaca file');
+
+        let data;
+        try {
+          data = await res.json();
+        } catch (parseErr) {
+          throw new Error(`Server merespons tidak valid (status ${res.status}). Coba lagi beberapa saat.`);
+        }
+
+        if (!res.ok || !data.success) {
+          throw new Error(data.error ? `${data.error} (status ${res.status})` : `Gagal membaca file (status ${res.status})`);
+        }
 
         document.getElementById('materiInput').value = data.text;
         fileNameDisplay.innerText = "✅ Berhasil diekstrak: " + file.name;
       } catch (err) {
         fileNameDisplay.innerText = "❌ Gagal membaca file";
-        alert(err.message || 'File gagal diunggah.');
+
+        if (err.message === 'TIMEOUT') {
+          alert('Waktu unggah habis. Silakan coba lagi.');
+        } else if (err.message === 'AUTH_REQUIRED') {
+          alert('Sesi login tidak ditemukan. Silakan login dengan Google terlebih dahulu.');
+        } else {
+          alert(err.message || 'File gagal diunggah. Silakan coba lagi.');
+        }
       } finally {
         isUploadingFile = false;
         event.target.value = '';
       }
     }
 
+    // ================================================================
+    // 🔧 processPodcast -- ditambal balik: pesan error ASLI dari backend
+    // (termasuk 409 lock/429 rate-limit) ditampilkan apa adanya, sentinel
+    // value (AUTH_EXPIRED/TIMEOUT) dapat pesan manusiawi, dan input/depth
+    // selector di-disable selama proses generate.
+    // ================================================================
     async function processPodcast() {
       if (isProcessingPodcast) return;
-      const text = document.getElementById('materiInput').value.trim();
+      const textInput = document.getElementById('materiInput');
+      const text = textInput.value.trim();
       if (!text) return alert('Silakan isi teks materi terlebih dahulu atau unggah file PDF/TXT!');
 
       const selectedDepth = getSelectedDepth();
@@ -1414,6 +1492,8 @@
       const progressBar = document.getElementById('progressBar');
 
       btn.disabled = true;
+      textInput.disabled = true;
+      setDepthSelectorDisabled(true);
       loading.classList.remove('hidden');
       result.classList.add('hidden');
       document.getElementById('tutorAnswerBox').classList.add('hidden');
@@ -1449,7 +1529,7 @@
           currentActivePodcastId = createdDbPodcastId;
         }
 
-        const activePodcastId = createdDbPodcastId || ('pod_' + Date.now());
+        const activePodcastId = createdDbPodcastId || ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'pod_' + Date.now());
 
         stepText.innerText = "2/3 Mengisi suara AI per segmen...";
         progressBar.style.width = "75%";
@@ -1475,10 +1555,20 @@
         result.classList.remove('hidden');
         loadAndPlaySegment(0, false);
       } catch (err) {
-        alert(err.message || 'Naskah atau audio gagal dibuat.');
+        console.error('❌ Process Podcast Error:', err);
+        if (err.message === 'AUTH_EXPIRED') {
+          alert('Sesi Anda telah berakhir. Silakan login kembali.');
+        } else if (err.message === 'TIMEOUT') {
+          alert('Waktu pemrosesan habis. Silakan coba lagi.');
+        } else {
+          // Tampilkan pesan error ASLI dari backend (termasuk 409 lock / 429 rate-limit)
+          alert(err.message || 'Naskah atau audio gagal dibuat. Silakan coba lagi.');
+        }
       } finally {
         isProcessingPodcast = false;
         btn.disabled = false;
+        textInput.disabled = false;
+        setDepthSelectorDisabled(false);
         loading.classList.add('hidden');
       }
     }
@@ -1487,16 +1577,36 @@
       const scriptBox = document.getElementById('scriptContainer');
       scriptBox.innerHTML = currentPodcastScript.map((item, idx) => `
         <div id="script-bubble-${idx}" onclick="loadAndPlaySegment(${idx})" class="bubble ${item.speaker === 'Rian' ? 'rian' : 'maya'}">
-          <div style="font-weight:800; font-size:0.75rem; color:var(--primary); margin-bottom:4px;">${item.speaker} · ${item.speaker === 'Rian' ? 'Host' : 'Expert'}</div>
+          <div style="font-weight:800; font-size:0.75rem; color:var(--primary); margin-bottom:4px; display:flex; align-items:center;">
+            <span>${item.speaker} · ${item.speaker === 'Rian' ? 'Host' : 'Expert'}</span>
+            <span class="bubble-eq eq"><span></span><span></span><span></span><span></span></span>
+          </div>
           <p style="margin:0; font-size:0.9rem; line-height:1.5;">${item.text}</p>
         </div>
       `).join('');
     }
 
+    // ================================================================
+    // 🔧 loadAndPlaySegment -- ditambal balik: kelola class
+    // 'active-speaking' di bubble naskah (highlight bubble yang lagi
+    // diputar), yang sebelumnya cuma nempel di HTML/CSS tapi ga pernah
+    // di-toggle oleh JS di file baru.
+    // ================================================================
     function loadAndPlaySegment(index, autoPlay = true) {
       if (!currentAudioSegments || currentAudioSegments.length === 0) return;
+
+      if (segmentAudioPlayer) {
+        segmentAudioPlayer.pause();
+      }
+
+      const prevBubble = document.getElementById(`script-bubble-${currentSegmentIndex}`);
+      if (prevBubble) prevBubble.classList.remove('active-speaking', 'is-playing');
+
       currentSegmentIndex = index;
       const targetSeg = currentAudioSegments[index];
+
+      const bubble = document.getElementById(`script-bubble-${index}`);
+      if (bubble) bubble.classList.add('active-speaking');
 
       document.getElementById('segmentIndicator').innerText = `Segmen ${index + 1} / ${currentAudioSegments.length}`;
       const isFullUrl = targetSeg.audioUrl.startsWith('http://') || targetSeg.audioUrl.startsWith('https://');
@@ -1505,12 +1615,19 @@
 
       savePlaybackProgress(index);
 
-      if (autoPlay) segmentAudioPlayer.play().catch(e => console.warn(e));
+      if (autoPlay) {
+        segmentAudioPlayer.play().catch(err => {
+          console.warn('⚠️ Autoplay diblokir browser:', err);
+        });
+      }
     }
 
     function togglePlayPauseSegment() {
-      if (segmentAudioPlayer.paused) segmentAudioPlayer.play();
-      else segmentAudioPlayer.pause();
+      if (segmentAudioPlayer.paused) {
+        segmentAudioPlayer.play().catch(err => console.warn('⚠️ Gagal play audio:', err));
+      } else {
+        segmentAudioPlayer.pause();
+      }
     }
 
     function prevSegment() { if (currentSegmentIndex > 0) loadAndPlaySegment(currentSegmentIndex - 1); }
@@ -1523,9 +1640,15 @@
       });
     }
 
+    // ================================================================
+    // 🔧 askTutorAI -- ditambal balik: disable input+tombol selama
+    // proses, teks tombol "Memproses...", dan pesan sentinel error
+    // (AUTH_EXPIRED/TIMEOUT) yang manusiawi alih-alih ditampilkan mentah.
+    // ================================================================
     async function askTutorAI() {
       if (isAskingAI) return;
-      const question = document.getElementById('questionInput').value.trim();
+      const qInput = document.getElementById('questionInput');
+      const question = qInput.value.trim();
       const sourceMaterial = document.getElementById('materiInput').value.trim();
 
       if (!question) return alert('Silakan ketikkan pertanyaan Anda terlebih dahulu.');
@@ -1533,9 +1656,13 @@
       isAskingAI = true;
       segmentAudioPlayer.pause();
 
+      const btnAsk = document.getElementById('btnAskQuestion');
       const answerBox = document.getElementById('tutorAnswerBox');
       const answerText = document.getElementById('tutorAnswerText');
 
+      btnAsk.disabled = true;
+      qInput.disabled = true;
+      btnAsk.innerText = 'Memproses...';
       answerBox.classList.remove('hidden');
       answerText.innerText = '🤔 Tutor AI sedang berpikir...';
 
@@ -1550,14 +1677,30 @@
         if (!data.success) throw new Error(data.error || 'Gagal mendapatkan jawaban');
 
         answerText.innerText = data.answer;
-        document.getElementById('questionInput').value = '';
+        qInput.value = '';
       } catch (err) {
-        answerText.innerText = '❌ ' + (err.message || 'Jawaban AI gagal dimuat.');
+        if (err.message === 'AUTH_EXPIRED') {
+          answerText.innerText = '❌ Sesi Anda telah berakhir. Silakan login kembali.';
+        } else if (err.message === 'TIMEOUT') {
+          answerText.innerText = '❌ Waktu permintaan habis. Silakan coba lagi.';
+        } else {
+          answerText.innerText = '❌ ' + (err.message || 'Jawaban AI gagal dimuat. Silakan coba lagi.');
+        }
       } finally {
         isAskingAI = false;
+        qInput.disabled = false;
+        btnAsk.disabled = false;
+        btnAsk.innerText = 'Tanya';
       }
     }
 
+    // ================================================================
+    // 🔧 downloadFullPodcast -- ditambal balik: endpoint ini balikin
+    // JSON (bukan langsung file) kalau gagal (termasuk 409 lock/429
+    // rate-limit), jadi perlu cek content-type dulu sebelum treat
+    // response sebagai blob MP3, supaya pesan error ASLI dari backend
+    // bisa ditampilkan -- bukan "Gagal membuat full podcast MP3" generik.
+    // ================================================================
     async function downloadFullPodcast() {
       if (isDownloadingMP3) return;
       isDownloadingMP3 = true;
@@ -1571,7 +1714,14 @@
           method: 'POST', headers, body: JSON.stringify({ podcast_script: currentPodcastScript })
         }, 180000);
 
-        if (!res.ok) throw new Error('Gagal membuat full podcast MP3');
+        if (!res.ok) {
+          const contentType = res.headers.get('content-type') || '';
+          if (contentType.includes('application/json')) {
+            const errData = await res.json();
+            throw new Error(errData.error || 'Gagal membuat full podcast MP3');
+          }
+          throw new Error('Gagal membuat full podcast MP3');
+        }
 
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
@@ -1581,7 +1731,13 @@
         a.click();
         URL.revokeObjectURL(url);
       } catch (err) {
-        alert(err.message || 'Audio gagal dibuat.');
+        if (err.message === 'AUTH_EXPIRED') {
+          alert('Sesi Anda telah berakhir. Silakan login kembali.');
+        } else if (err.message === 'TIMEOUT') {
+          alert('Waktu penggabungan audio habis. Silakan coba lagi.');
+        } else {
+          alert(err.message || 'Audio gagal dibuat. Silakan coba lagi.');
+        }
       } finally {
         isDownloadingMP3 = false;
         btn.disabled = false;
