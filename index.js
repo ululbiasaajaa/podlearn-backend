@@ -173,8 +173,26 @@ if (!fs.existsSync(uploadsDir)) {
 app.use('/temp-audio', requireAuth, express.static(tempAudioDir));
 
 // File Upload Config (Max 10MB & Filter PDF/TXT/PPTX Only)
+// 🔧 FIX: sebelumnya pakai `dest: 'uploads/'` polos, yang bikin multer
+// nyimpen file fisik dengan nama HASH doang TANPA extension asli (misal
+// `uploads/5222eda7d9d43a0b382959f9efdef00e`). PDF & TXT aman karena
+// dibaca langsung jadi buffer (fs.readFileSync, nggak peduli nama file),
+// tapi `officeparser` buat PPTX nentuin tipe file dari EXTENSION di path
+// yang dikasih -- karena extension-nya hilang, dia gagal detect tipe file
+// & throw error "currently supports docx, pptx, ... files only" walau
+// file yang diupload aslinya valid .pptx.
+//
+// Fix: pakai diskStorage custom yang MEMPERTAHANKAN extension asli pas
+// nyimpen file ke folder uploads/, nama file tetap random/unik (UUID)
+// biar nggak collision, tapi extension-nya ikut kebawa.
 const upload = multer({
-  dest: 'uploads/',
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, uploadsDir),
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      cb(null, `${crypto.randomUUID()}${ext}`);
+    }
+  }),
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const allowedMimes = [
