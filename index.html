@@ -1829,6 +1829,15 @@
         const data = await res.json();
         if (!data.success) throw new Error(data.error || 'Gagal membuat versi suara');
 
+        // Backend sekarang balikin ARRAY `turns` (Rian nyambungin dulu,
+        // baru Maya jawab) -- bukan 1 teks + 1 audio tunggal kayak v1.
+        // Tetap jaga backward-compat kalau-kalau ada response versi lama.
+        const turns = Array.isArray(data.turns)
+          ? data.turns
+          : (data.answerText ? [{ speaker: 'Maya', text: data.answerText, audioUrl: data.audioUrl }] : []);
+
+        if (turns.length === 0) throw new Error('Gagal membuat versi suara');
+
         // Buang dari array interjection teks (A1) -- karena sekarang udah
         // jadi segmen beneran, bukan lagi tampilan terpisah.
         currentInterjections = currentInterjections.filter(i => i.id !== interjectionId);
@@ -1836,35 +1845,40 @@
         // Sisipkan TEPAT setelah segmen tempat pertanyaan diajukan, DI DUA
         // array sekaligus (script & audio) biar index-nya tetap 1:1 --
         // inilah bedanya sama A1 yang sengaja nggak nyentuh array ini.
+        // Sekarang bisa lebih dari 1 segmen (Rian + Maya), jadi di-loop
+        // biar urutannya kejaga persis kayak urutan `turns` dari backend.
         const insertAt = itj.afterIndex + 1;
-        currentPodcastScript.splice(insertAt, 0, {
-          speaker: 'Maya',
-          text: data.answerText,
-          isInterjection: true
-        });
-        currentAudioSegments.splice(insertAt, 0, {
-          speaker: 'Maya',
-          audioUrl: data.audioUrl
+        const shiftAmount = turns.length;
+        turns.forEach((turn, i) => {
+          currentPodcastScript.splice(insertAt + i, 0, {
+            speaker: turn.speaker,
+            text: turn.text,
+            isInterjection: true
+          });
+          currentAudioSegments.splice(insertAt + i, 0, {
+            speaker: turn.speaker,
+            audioUrl: turn.audioUrl
+          });
         });
         // Rapikan ulang field .index tiap segmen audio (nggak dipakai buat
         // lookup playback -- itu pakai posisi array -- tapi tetap dijaga
         // konsisten buat kebersihan data / kalau dipakai fitur lain nanti).
         currentAudioSegments = currentAudioSegments.map((seg, i) => ({ ...seg, index: i }));
 
-        // Penting: array-nya baru aja "membesar" di posisi insertAt. Semua
-        // REFERENSI index yang nunjuk ke posisi >= insertAt jadi basi kalau
-        // nggak ikut digeser +1:
+        // Penting: array-nya baru aja "membesar" sebanyak shiftAmount di
+        // posisi insertAt. Semua REFERENSI index yang nunjuk ke posisi
+        // >= insertAt jadi basi kalau nggak ikut digeser sebanyak itu:
         // 1. Interjection teks (A1) lain yang afterIndex-nya ada di/setelah
         //    titik sisipan -- kalau nggak digeser, nanti nongolnya nempel
         //    ke segmen yang salah (yang sekarang udah geser posisi).
         currentInterjections = currentInterjections.map(other =>
-          other.afterIndex >= insertAt ? { ...other, afterIndex: other.afterIndex + 1 } : other
+          other.afterIndex >= insertAt ? { ...other, afterIndex: other.afterIndex + shiftAmount } : other
         );
         // 2. Posisi playback yang lagi aktif -- biar tetap nunjuk ke konten
         //    yang sama persis kayak sebelum disisipkan (bukan malah geser
         //    ke segmen setelahnya).
         if (currentSegmentIndex >= insertAt) {
-          currentSegmentIndex += 1;
+          currentSegmentIndex += shiftAmount;
         }
 
         renderScriptBox();

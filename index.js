@@ -305,7 +305,13 @@ async function callGeminiWithRetry(prompt, options = {}, retries) {
   // risiko output ke-truncate di tengah sebelum JSON-nya closed dengan
   // benar, yang akan bikin JSON.parse(rawText) di endpoint gagal diam-diam
   // (gagal karena truncation, bukan karena kontennya emang segitu).
-  const { useSchema = false, maxOutputTokens } = options;
+  // 🅰️2-v2: `responseSchema` custom opsional -- kalau dikasih, dipake
+  // apa adanya (buat kebutuhan lain selain generate-script, misal endpoint
+  // interjection suara yang butuh struktur JSON beda). Kalau nggak dikasih
+  // (default), fallback ke schema podcast_script+quiz+memory kayak biasa --
+  // jadi endpoint generate-script yang udah ada TIDAK perlu berubah sama
+  // sekali.
+  const { useSchema = false, maxOutputTokens, responseSchema: customResponseSchema } = options;
   const maxRetries = retries || apiKeys.length * 2;
 
   // 🔧 FIX: batasi TOTAL waktu retry akibat overload (503) dengan sebuah
@@ -337,7 +343,7 @@ async function callGeminiWithRetry(prompt, options = {}, retries) {
 
       if (useSchema) {
         config.responseMimeType = 'application/json';
-        config.responseSchema = {
+        config.responseSchema = customResponseSchema || {
           type: 'OBJECT',
           properties: {
             // 🧠 Track B - M1: field memory (title/topics/key_concepts/summary)
@@ -1293,11 +1299,55 @@ app.post('/api/ask-question-voice', requireAuth, async (req, res) => {
       'Riwayat Podcast yang Pernah Dibuat User Ini Sebelumnya (dari yang terbaru):'
     );
 
+    // 🅰️2-v2: bukan 1 baris Maya doang (yang ngerangkep transisi + jawab
+    // sekaligus), tapi 2 baris dialog -- persis kayak host beneran nge-
+    // bridge interupsi ke expert:
+    // 1. "Rian" (Host) -- nyadarin ada pendengar nanya, SEKALIAN parafrase
+    //    ulang pertanyaannya (biar yang cuma dengerin audio, tanpa liat
+    //    transkrip, tetap paham konteksnya -- soalnya pertanyaan yang user
+    //    ketik itu sendiri nggak pernah "kedengeran").
+    // 2. "Maya" (Expert) -- LANGSUNG jawab, TANPA transisi sendiri lagi
+    //    (karena Rian di baris 1 udah handle itu).
+    const interjectionSchema = {
+      type: 'OBJECT',
+      properties: {
+        turns: {
+          type: 'ARRAY',
+          items: {
+            type: 'OBJECT',
+            properties: {
+              speaker: { type: 'STRING' },
+              text: { type: 'STRING' }
+            },
+            required: ['speaker', 'text']
+          }
+        }
+      },
+      required: ['turns']
+    };
+
     const prompt = `
-Kamu berperan sebagai "Maya", host ahli yang ramah dalam sebuah podcast
-edukasi santai. Podcast SEDANG DI-PAUSE karena pendengar (learner) tiba-tiba
-nanya sesuatu di tengah obrolan, dan kamu mau jawab pertanyaannya SECARA
-LISAN, seolah kamu ngomong langsung -- BUKAN menulis jawaban formal/tertulis.
+Podcast edukasi SEDANG DI-PAUSE karena pendengar (learner) tiba-tiba nanya
+sesuatu di tengah obrolan. Buatkan 2 baris dialog podcast (BUKAN jawaban
+tertulis formal) untuk momen sisipan ini, dengan urutan dan peran PERSIS
+seperti berikut:
+
+BARIS 1 -- Speaker "Rian" (Host):
+- Menyadari & menyampaikan ke Maya bahwa ada pendengar yang bertanya.
+- Menyampaikan ULANG pertanyaan tersebut secara natural (parafrase singkat,
+  BUKAN membaca teks pertanyaan mentah-mentah).
+- Gaya santai kayak lagi ngobrol beneran, variasikan kalimat pembuka
+  (jangan template yang sama persis terus-terusan).
+- Singkat -- cukup 1-2 kalimat saja.
+
+BARIS 2 -- Speaker "Maya" (Expert):
+- LANGSUNG jawab pertanyaan tersebut -- TIDAK PERLU bikin transisi/basa-basi
+  sendiri lagi (karena Rian di baris 1 sudah melakukan itu).
+- Gaya BAHASA LISAN santai ala podcast, BUKAN bahasa tulisan formal/kaku.
+- Jawab berdasarkan Materi Sumber dan Konteks Percakapan di bawah --
+  JANGAN mengarang informasi yang tidak tertera di sana.
+- RINGKAS -- maksimal sekitar 80-120 kata, karena ini bakal DIBACAKAN
+  sebagai audio, bukan dibaca sebagai teks panjang.
 
 Materi Sumber Utama (Source Material):
 """
@@ -1310,78 +1360,93 @@ ${memoryContextBlock}
 Pertanyaan Learner:
 "${question.trim()}"
 
-ATURAN GAYA JAWABAN (WAJIB DIIKUTI, JANGAN DILANGGAR):
-1. Mulai dengan transisi singkat & natural yang mengakui pertanyaan ini
-   muncul di tengah podcast (variasikan kalimatnya, jangan selalu sama
-   persis -- contoh gaya: "Eh, ada yang nanya nih..." / "Oh, pertanyaan
-   bagus nih...").
-2. Gunakan gaya BAHASA LISAN santai ala podcast, BUKAN bahasa tulisan
-   formal/kaku.
-3. Tetap jawab berdasarkan Materi Sumber dan Konteks Percakapan di atas --
-   JANGAN mengarang informasi yang tidak tertera di sana.
-4. RINGKAS -- maksimal sekitar 80-120 kata, karena teks ini bakal
-   DIBACAKAN sebagai audio, bukan dibaca sebagai teks panjang.
-5. Keluarkan HANYA teks yang akan dibacakan -- TANPA label pembicara
-   (jangan tulis "Maya:" di depan), TANPA tanda kutip pembuka/penutup.
+Field "text" pada tiap baris HANYA berisi teks yang akan dibacakan --
+TANPA label pembicara di depannya, TANPA tanda kutip pembuka/penutup.
 `;
 
-    const response = await callGeminiWithRetry(prompt);
-    const spokenText = response.text ? response.text.trim() : '';
+    const response = await callGeminiWithRetry(prompt, { useSchema: true, responseSchema: interjectionSchema });
+    const rawText = response.text || '';
 
-    if (!spokenText) {
+    let turns = [];
+    try {
+      const parsed = JSON.parse(rawText);
+      turns = Array.isArray(parsed.turns) ? parsed.turns : [];
+    } catch (parseErr) {
+      console.error('❌ [Interjection Parse Error] message:', parseErr?.message);
+    }
+
+    // Validasi defensif: harus ada minimal 1 baris, tiap baris harus punya
+    // speaker (Rian/Maya) dan text yang nggak kosong -- kalau Gemini ngasih
+    // struktur yang aneh/rusak, mending gagal jelas daripada TTS-in data
+    // yang nggak valid.
+    turns = turns.filter(t => t && typeof t.text === 'string' && t.text.trim() &&
+      (t.speaker === 'Rian' || t.speaker === 'Maya'));
+
+    if (turns.length === 0) {
       return res.status(500).json({ success: false, error: 'Gagal membuat jawaban versi suara.' });
     }
 
-    // TTS pake suara Maya -- konsisten sama voice yang dipake buat speaker
-    // "Maya" di segmen podcast biasa (lihat /api/generate-audio-segments).
-    const tts = new EdgeTTS({
-      voice: 'id-ID-GadisNeural',
-      lang: 'id-ID',
-      outputFormat: 'audio-24khz-48kbitrate-mono-mp3',
-      timeout: 30000
-    });
+    // TTS tiap baris SATU PER SATU (sequential, bukan batched) -- cuma 2
+    // baris doang, nggak perlu kompleksitas runInBatches. Voice-nya
+    // konsisten sama yang dipake di segmen podcast biasa (Rian =
+    // id-ID-ArdiNeural, Maya = id-ID-GadisNeural).
+    const synthesizedTurns = [];
+    for (const turn of turns) {
+      const voice = turn.speaker === 'Rian' ? 'id-ID-ArdiNeural' : 'id-ID-GadisNeural';
+      const tts = new EdgeTTS({
+        voice,
+        lang: 'id-ID',
+        outputFormat: 'audio-24khz-48kbitrate-mono-mp3',
+        timeout: 30000
+      });
 
-    const uniqueFilename = `interjection_${crypto.randomUUID()}.mp3`;
-    const absolutePath = path.resolve(tempAudioDir, uniqueFilename);
-    let finalAudioUrl = `/temp-audio/${uniqueFilename}`;
+      const uniqueFilename = `interjection_${crypto.randomUUID()}.mp3`;
+      const absolutePath = path.resolve(tempAudioDir, uniqueFilename);
+      let finalAudioUrl = `/temp-audio/${uniqueFilename}`;
 
-    try {
-      await tts.ttsPromise(spokenText, absolutePath);
-    } catch (ttsError) {
-      console.error('❌ [Interjection TTS Error] message:', ttsError?.message);
-      return res.status(500).json({ success: false, error: 'Gagal membuat audio jawaban.' });
-    }
-
-    // Upload ke storage permanen (kalau ada podcast_id & user login), sama
-    // pola kayak /api/generate-audio-segments -- biar audio-nya nggak ikut
-    // ke-cleanup otomatis (temp-audio dibersihkan tiap 15 menit) dan tetap
-    // ada kalau podcast dibuka lagi nanti. Fallback ke temp-audio lokal
-    // kalau upload gagal (podcast tetap bisa diputar SEKARANG, cuma nggak
-    // persistent lintas sesi).
-    if (userId && req.supabase && podcast_id) {
       try {
-        const storagePath = `${userId}/${podcast_id}/interjection_${crypto.randomUUID()}.mp3`;
-        const fileBuffer = fs.readFileSync(absolutePath);
-        const { error: uploadError } = await req.supabase.storage
-          .from('podcast-audio')
-          .upload(storagePath, fileBuffer, { contentType: 'audio/mpeg', upsert: true });
-
-        if (!uploadError) {
-          const { data: publicUrlData } = req.supabase.storage
-            .from('podcast-audio')
-            .getPublicUrl(storagePath);
-          finalAudioUrl = publicUrlData.publicUrl;
-          if (fs.existsSync(absolutePath)) fs.unlinkSync(absolutePath);
-        }
-      } catch (stErr) {
-        // Fallback lokal aktif jika upload ke storage mengalami kendala
+        await tts.ttsPromise(turn.text.trim(), absolutePath);
+      } catch (ttsError) {
+        console.error('❌ [Interjection TTS Error] message:', ttsError?.message);
+        return res.status(500).json({ success: false, error: 'Gagal membuat audio jawaban.' });
       }
+
+      // Upload ke storage permanen (kalau ada podcast_id & user login), sama
+      // pola kayak /api/generate-audio-segments -- biar audio-nya nggak ikut
+      // ke-cleanup otomatis (temp-audio dibersihkan tiap 15 menit) dan tetap
+      // ada kalau podcast dibuka lagi nanti. Fallback ke temp-audio lokal
+      // kalau upload gagal (podcast tetap bisa diputar SEKARANG, cuma nggak
+      // persistent lintas sesi).
+      if (userId && req.supabase && podcast_id) {
+        try {
+          const storagePath = `${userId}/${podcast_id}/interjection_${crypto.randomUUID()}.mp3`;
+          const fileBuffer = fs.readFileSync(absolutePath);
+          const { error: uploadError } = await req.supabase.storage
+            .from('podcast-audio')
+            .upload(storagePath, fileBuffer, { contentType: 'audio/mpeg', upsert: true });
+
+          if (!uploadError) {
+            const { data: publicUrlData } = req.supabase.storage
+              .from('podcast-audio')
+              .getPublicUrl(storagePath);
+            finalAudioUrl = publicUrlData.publicUrl;
+            if (fs.existsSync(absolutePath)) fs.unlinkSync(absolutePath);
+          }
+        } catch (stErr) {
+          // Fallback lokal aktif jika upload ke storage mengalami kendala
+        }
+      }
+
+      synthesizedTurns.push({
+        speaker: turn.speaker,
+        text: turn.text.trim(),
+        audioUrl: finalAudioUrl
+      });
     }
 
     res.json({
       success: true,
-      answerText: spokenText,
-      audioUrl: finalAudioUrl
+      turns: synthesizedTurns
     });
 
   } catch (error) {
