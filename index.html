@@ -621,6 +621,30 @@
     .bubble .bubble-eq { display: none; margin-left: 8px; color: var(--primary); }
     .bubble.is-playing .bubble-eq { display: inline-flex; }
 
+    /* 🅰️1 Interjection bubble -- "nyela" via Tutor AI, teks doang (belum
+       ada audio). Sengaja dibedain visualnya (border putus-putus, warna
+       amber) biar jelas ini BUKAN bagian naskah yang dibacakan, murni
+       tanya-jawab yang nyempil di transkrip. Nggak clickable (cursor
+       default) karena nggak ikut alur playback audio sama sekali. */
+    .bubble.interjection {
+      border-left-color: #F59E0B;
+      border-style: dashed;
+      background: rgba(245, 158, 11, 0.06);
+      cursor: default;
+    }
+    .bubble.interjection .interjection-label {
+      font-weight: 800; font-size: 0.7rem; color: #F59E0B;
+      margin-bottom: 6px; display: flex; align-items: center; gap: 6px;
+      text-transform: uppercase; letter-spacing: 0.03em;
+    }
+    .bubble.interjection .interjection-question {
+      font-size: 0.85rem; font-weight: 700; margin: 0 0 6px 0;
+      color: var(--text, inherit);
+    }
+    .bubble.interjection .interjection-answer {
+      font-size: 0.88rem; line-height: 1.5; margin: 0; opacity: 0.9;
+    }
+
     .quiz-item {
       background: var(--surface);
       border: 1px solid var(--surface-border);
@@ -1008,6 +1032,13 @@
     let currentActivePodcastId = null;
     let currentPodcastScript = [];
     let currentAudioSegments = [];
+    // 🅰️1: interjection ("nyela" via Tutor AI) yang nyempil di transkrip.
+    // Item: { afterIndex, question, answer }. SENGAJA terpisah dari
+    // currentPodcastScript/currentAudioSegments (bukan disisipkan ke
+    // dalamnya) -- biar index audio yang udah 1:1 sama naskah nggak
+    // keganggu. Ini murni state tampilan, TIDAK disimpan ke Supabase
+    // (reset tiap kali generate/buka podcast baru).
+    let currentInterjections = [];
     let currentSegmentIndex = 0;
     let currentQuizData = [];
     let userAnswers = {};
@@ -1096,6 +1127,7 @@
       currentActivePodcastId = null;
       currentPodcastScript = [];
       currentAudioSegments = [];
+      currentInterjections = [];
       currentSegmentIndex = 0;
       currentQuizData = [];
       userAnswers = {};
@@ -1225,6 +1257,7 @@
       currentActivePodcastId = selectedPod.id;
       currentPodcastScript = selectedPod.podcast_script || [];
       currentAudioSegments = selectedPod.audio_segments || [];
+      currentInterjections = []; // interjection nggak disimpan, mulai bersih tiap buka podcast
       currentQuizData = selectedPod.quiz_data || [];
       userAnswers = {};
 
@@ -1600,6 +1633,7 @@
       document.getElementById('tutorAnswerBox').classList.add('hidden');
 
       userAnswers = {};
+      currentInterjections = [];
       document.getElementById('scoreBadge').classList.add('hidden');
       let createdDbPodcastId = null;
 
@@ -1684,17 +1718,43 @@
       }
     }
 
+    // Dipakai buat nge-escape teks user (pertanyaan Tutor AI) sebelum
+    // dimasukin ke innerHTML -- item.text dari Gemini nggak di-escape juga
+    // (risiko lama, di luar scope ini), tapi pertanyaan user WAJIB
+    // di-escape karena ini input bebas ketik, bukan hasil generate AI.
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.innerText = str == null ? '' : String(str);
+      return div.innerHTML;
+    }
+
+    // 🅰️1: render transkrip -- bubble naskah asli (ikut playback audio)
+    // DISELIPI bubble interjection (kalau ada) tepat setelah segmen tempat
+    // pertanyaan itu diajukan. Interjection cuma nampilan, nggak masuk ke
+    // currentPodcastScript/currentAudioSegments, jadi index playback audio
+    // sama sekali nggak kesentuh/kegeser oleh ini.
     function renderScriptBox() {
       const scriptBox = document.getElementById('scriptContainer');
-      scriptBox.innerHTML = currentPodcastScript.map((item, idx) => `
+      scriptBox.innerHTML = currentPodcastScript.map((item, idx) => {
+        const mainBubble = `
         <div id="script-bubble-${idx}" onclick="loadAndPlaySegment(${idx})" class="bubble ${item.speaker === 'Rian' ? 'rian' : 'maya'}">
           <div style="font-weight:800; font-size:0.75rem; color:var(--primary); margin-bottom:4px; display:flex; align-items:center;">
             <span>${item.speaker} · ${item.speaker === 'Rian' ? 'Host' : 'Expert'}</span>
             <span class="bubble-eq eq"><span></span><span></span><span></span><span></span></span>
           </div>
           <p style="margin:0; font-size:0.9rem; line-height:1.5;">${item.text}</p>
-        </div>
-      `).join('');
+        </div>`;
+
+        const interjectionsHere = currentInterjections.filter(itj => itj.afterIndex === idx);
+        const interjectionBubbles = interjectionsHere.map(itj => `
+        <div id="interjection-${itj.id}" class="bubble interjection">
+          <div class="interjection-label">💬 Kamu nyela</div>
+          <p class="interjection-question">${escapeHtml(itj.question)}</p>
+          <p class="interjection-answer">${escapeHtml(itj.answer)}</p>
+        </div>`).join('');
+
+        return mainBubble + interjectionBubbles;
+      }).join('');
     }
 
     function loadAndPlaySegment(index, autoPlay = true) {
@@ -1777,6 +1837,25 @@
         if (!data.success) throw new Error(data.error || 'Gagal mendapatkan jawaban');
 
         answerText.innerText = data.answer;
+
+        // 🅰️1: catat interjection ini biar nyempil di transkrip juga
+        // (bukan cuma muncul sesaat di answerBox), terus re-render supaya
+        // langsung keliatan. Dipasang tepat setelah segmen yang lagi aktif
+        // saat pertanyaan diajukan (currentSegmentIndex). ID unik dipakai
+        // buat scroll-ke-bubble yang presisi (nggak bisa asal ":last-of-type"
+        // karena interjection bisa nyempil di TENGAH transkrip, bukan cuma
+        // di paling bawah, kalau usernya nanya pas belum di segmen akhir).
+        const newInterjectionId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        currentInterjections.push({
+          id: newInterjectionId,
+          afterIndex: currentSegmentIndex,
+          question,
+          answer: data.answer
+        });
+        renderScriptBox();
+
+        const newBubble = document.getElementById(`interjection-${newInterjectionId}`);
+        if (newBubble) newBubble.scrollIntoView({ behavior: 'smooth', block: 'center' });
         qInput.value = '';
       } catch (err) {
         if (err.message === 'AUTH_EXPIRED') {
