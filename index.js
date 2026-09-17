@@ -744,6 +744,58 @@ app.post('/api/generate-script', requireAuth, async (req, res) => {
 
     const cleanText = text.trim().substring(0, 12000);
 
+    // 🧠 Track B - M2: ambil podcast_memory user (dibatasi MAX_MEMORY_ITEMS
+    // terbaru) buat dikasih sebagai KONTEKS ke Gemini. Sengaja TIDAK ada
+    // "relevance search" terpisah di sini -- metadata-nya udah ringkas
+    // (title+topics+summary per podcast), jadi Gemini sendiri yang menilai
+    // relevansinya lewat instruksi guardrail di prompt (lihat di bawah).
+    // Kalau nanti daftar ini kebesaran (~40-50+ podcast), baru dipikirin
+    // RAG/embedding -- bukan sekarang.
+    //
+    // Fail-open: kalau query memory gagal (misal tabel belum ke-migrate di
+    // environment lain), JANGAN sampai bikin generate podcast utama ikut
+    // gagal -- cukup skip konteks memory-nya.
+    let memoryContextBlock = '';
+    let memoryItemsInjected = 0;
+    try {
+      const { data: pastMemories, error: memoryError } = await req.supabase
+        .from('podcast_memory')
+        .select('title, topics, summary, created_at')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(MAX_MEMORY_ITEMS);
+
+      if (memoryError) {
+        console.warn('⚠️ [Podcast Memory] Gagal mengambil riwayat memory:', memoryError.message);
+      } else if (Array.isArray(pastMemories) && pastMemories.length > 0) {
+        memoryItemsInjected = pastMemories.length;
+        const memoryLines = pastMemories
+          .map((m, idx) => {
+            const topicsStr = Array.isArray(m.topics) && m.topics.length > 0 ? m.topics.join(', ') : '-';
+            return `${idx + 1}. "${m.title}" (topik: ${topicsStr}) -- ${m.summary || ''}`;
+          })
+          .join('\n');
+
+        memoryContextBlock = `
+Riwayat Podcast yang Pernah Dibuat User Ini Sebelumnya (dari yang terbaru):
+${memoryLines}
+
+ATURAN PENGGUNAAN RIWAYAT (WAJIB DIIKUTI, JANGAN DILANGGAR):
+- Riwayat di atas HANYA konteks tambahan, BUKAN materi yang harus dibahas.
+- Kalau TIDAK ada riwayat yang berhubungan secara bermakna dengan materi
+  baru di bawah, JANGAN memaksakan hubungan -- abaikan riwayat tersebut
+  sepenuhnya dan bahas materi baru seperti biasa, TANPA menyebut riwayat
+  sama sekali.
+- Kalau ADA riwayat yang relevan, kamu BOLEH menyinggungnya sesekali
+  secara natural (mis. "Ini masih nyambung sama yang kita bahas soal ...")
+  -- tapi jangan dipaksakan di banyak segmen, cukup 1x singgungan natural
+  kalau memang relevan.
+`;
+      }
+    } catch (memErr) {
+      console.warn('⚠️ [Podcast Memory] Error tak terduga saat mengambil memory:', memErr?.message);
+    }
+
     // Step 4: jumlah kuis TETAP 10 di semua mode depth -- ini sengaja
     // dikunci biar eksperimen depth clean (variabel yang berubah cuma
     // naskahnya, bukan ikut jumlah kuisnya).
@@ -770,7 +822,7 @@ Selain naskah podcast dan kuis, sertakan juga metadata ringkas berikut ini
 - "key_concepts": array berisi istilah atau konsep kunci yang muncul di
   materi (maksimal 8 istilah, tiap item singkat).
 - "summary": ringkasan isi materi dalam 1-2 kalimat saja.
-
+${memoryContextBlock}
 Materi:
 ${cleanText}
 `;
@@ -801,7 +853,7 @@ ${cleanText}
         }, 0)
       : 0;
 
-    console.log(`📊 [Generate Script Metrics] depth=${depth} wordCount=${wordCount} segmentCount=${segmentCount}`);
+    console.log(`📊 [Generate Script Metrics] depth=${depth} wordCount=${wordCount} segmentCount=${segmentCount} memoryItemsInjected=${memoryItemsInjected}`);
 
     res.json({
       success: true,
