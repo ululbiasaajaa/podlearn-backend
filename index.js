@@ -301,6 +301,22 @@ async function callGeminiWithRetry(prompt, options = {}, retries) {
         config.responseSchema = {
           type: 'OBJECT',
           properties: {
+            // 🧠 Track B - M1: field memory (title/topics/key_concepts/summary)
+            // sengaja digabung di SATU response schema yang sama dengan
+            // podcast_script & quiz -- bukan bikin API call Gemini terpisah
+            // cuma buat generate judul. Field-field ini BUKAN bagian naskah
+            // yang dibacakan TTS, murni metadata buat disimpan ke tabel
+            // podcast_memory (dipakai nanti di M2/M3).
+            title: { type: 'STRING' },
+            topics: {
+              type: 'ARRAY',
+              items: { type: 'STRING' }
+            },
+            key_concepts: {
+              type: 'ARRAY',
+              items: { type: 'STRING' }
+            },
+            summary: { type: 'STRING' },
             podcast_script: {
               type: 'ARRAY',
               items: {
@@ -328,7 +344,7 @@ async function callGeminiWithRetry(prompt, options = {}, retries) {
               }
             }
           },
-          required: ['podcast_script', 'quiz']
+          required: ['title', 'topics', 'key_concepts', 'summary', 'podcast_script', 'quiz']
         };
       }
 
@@ -466,6 +482,21 @@ function getContextForQuestion(podcastScript, currentIndex) {
 
   return podcastScript.slice(startIndex, safeIndex + 1);
 }
+
+// ============================================================
+// 🧠 PODCAST MEMORY (Track B - M0: Schema & Config)
+// ============================================================
+// Podcast memory adalah "ringkasan" tiap podcast yang pernah dibuat user
+// (title + topics + key_concepts + summary) -- BUKAN transcript lengkap.
+// Disimpan di tabel terpisah `podcast_memory` (lihat migration SQL),
+// nanti dipakai di M2 (generate podcast baru sadar konteks lama) dan
+// M3 (Tutor AI sadar konteks lama).
+//
+// MAX_MEMORY_ITEMS: batas jumlah memory TERBARU yang diambil & di-inject
+// ke prompt. Sengaja dibikin config (bukan hardcode) supaya nanti gampang
+// eksperimen nilai (10/20/30) tanpa redeploy kode -- cukup ubah env var
+// di Railway. Belum dipakai di endpoint manapun sampai M1/M2 selesai.
+const MAX_MEMORY_ITEMS = parseInt(process.env.MAX_MEMORY_ITEMS || '20', 10);
 
 // ============================================================
 // 📊 USAGE TRACKING & RATE LIMITING (Milestone 16)
@@ -728,6 +759,17 @@ ATURAN FORMAT KUIS (WAJIB DIIKUTI PERSIS, JANGAN DILANGGAR):
 - Setiap soal harus punya TEPAT 4 opsi jawaban.
 - Setiap opsi WAJIB diawali huruf dan titik, contoh: "A. teks jawaban", "B. teks jawaban", "C. teks jawaban", "D. teks jawaban".
 - Field "answer" HANYA berisi SATU HURUF KAPITAL (A, B, C, atau D) yang sesuai opsi yang benar -- JANGAN sertakan teks jawaban di field ini, cukup hurufnya saja. Contoh benar: "B". Contoh salah: "B. Pengujian toksisitas...".
+
+Selain naskah podcast dan kuis, sertakan juga metadata ringkas berikut ini
+(BUKAN bagian dari naskah yang dibacakan, murni ringkasan tentang materi):
+- "title": judul singkat dan deskriptif untuk podcast ini (maksimal sekitar
+  8 kata), mencerminkan topik utama materi secara spesifik -- JANGAN pakai
+  judul generik seperti "Podcast Edukasi" atau "Materi Pembelajaran".
+- "topics": array berisi 3-6 topik/subtopik utama yang dibahas di materi
+  (tiap item singkat, 1-4 kata).
+- "key_concepts": array berisi istilah atau konsep kunci yang muncul di
+  materi (maksimal 8 istilah, tiap item singkat).
+- "summary": ringkasan isi materi dalam 1-2 kalimat saja.
 
 Materi:
 ${cleanText}

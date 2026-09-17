@@ -1348,6 +1348,33 @@
         .eq('user_id', currentUserSession.user.id);
     }
 
+    // 🧠 Track B - M1: simpan ringkasan podcast (title/topics/key_concepts/
+    // summary yang udah digenerate Gemini bareng naskah & kuis) ke tabel
+    // podcast_memory. Dipanggil abis createInitialPodcastRecord berhasil.
+    //
+    // Sengaja "fire and forget" (gagal cuma di-warn, TIDAK melempar error
+    // ke luar) -- podcast_memory itu fitur pelengkap (dipakai nanti di
+    // M2/M3), jadi kalau gagal kesimpen, alur utama bikin podcast (naskah +
+    // audio) tetap harus lanjut jalan normal buat user.
+    async function savePodcastMemory(podcastId, title, topics, keyConcepts, summary) {
+      if (!currentUserSession || !currentUserSession.user || !podcastId) return;
+      try {
+        const { error } = await supabaseClient
+          .from('podcast_memory')
+          .insert([{
+            user_id: currentUserSession.user.id,
+            podcast_id: podcastId,
+            title: title || 'Podcast Tanpa Judul',
+            topics: Array.isArray(topics) ? topics : [],
+            key_concepts: Array.isArray(keyConcepts) ? keyConcepts : [],
+            summary: summary || ''
+          }]);
+        if (error) throw error;
+      } catch (err) {
+        console.warn('⚠️ Gagal menyimpan podcast memory:', err.message);
+      }
+    }
+
     // Feedback System Logic
     async function checkFeedbackPromptStatus() {
       if (feedbackPromptCheckedInSession || !currentUserSession) return;
@@ -1588,19 +1615,30 @@
 
         if (!scriptData.success) throw new Error(scriptData.error || 'Gagal generate naskah');
 
-        const { podcast_script, quiz, depth: resolvedDepth } = scriptData.data;
+        const {
+          podcast_script, quiz, depth: resolvedDepth,
+          title, topics, key_concepts, summary
+        } = scriptData.data;
         currentPodcastScript = podcast_script;
         currentQuizData = quiz;
 
         renderScriptBox();
         renderQuiz();
 
+        // Fallback ke title lama (tanggal) kalau field title dari Gemini
+        // kosong/gagal digenerate -- jangan sampai podcast tanpa title.
+        const resolvedTitle = title || ('Podcast ' + new Date().toLocaleDateString('id-ID'));
+
         if (currentUserSession && currentUserSession.user) {
           createdDbPodcastId = await createInitialPodcastRecord(
-            'Podcast ' + new Date().toLocaleDateString('id-ID'),
+            resolvedTitle,
             text, currentPodcastScript, currentQuizData, resolvedDepth || selectedDepth
           );
           currentActivePodcastId = createdDbPodcastId;
+
+          if (createdDbPodcastId) {
+            savePodcastMemory(createdDbPodcastId, resolvedTitle, topics, key_concepts, summary);
+          }
         }
 
         const activePodcastId = createdDbPodcastId || ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'pod_' + Date.now());
