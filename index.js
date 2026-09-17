@@ -544,6 +544,60 @@ function getContextForQuestion(podcastScript, currentIndex) {
 // di Railway. Belum dipakai di endpoint manapun sampai M1/M2 selesai.
 const MAX_MEMORY_ITEMS = parseInt(process.env.MAX_MEMORY_ITEMS || '20', 10);
 
+// 🧠 Track B - M2 & B3: ambil podcast_memory user (dibatasi MAX_MEMORY_ITEMS
+// terbaru) dan format jadi blok teks konteks siap tempel ke prompt Gemini,
+// LENGKAP dengan guardrail relevansi. Dipakai BARENG oleh /api/generate-script
+// (M2 -- generate podcast baru sadar konteks lama) dan /api/ask-question
+// (B3 -- Tutor AI sadar konteks lama). Satu sumber data + satu aturan
+// guardrail, cuma beda di mana hasilnya disuntikkan ke prompt masing-masing
+// endpoint -- daripada duplikat logic yang sama di dua tempat.
+//
+// Sengaja TIDAK ada "relevance search" terpisah -- metadata-nya udah ringkas
+// (title+topics+summary per podcast), jadi Gemini sendiri yang menilai
+// relevansinya. Fail-open: kalau query memory gagal, JANGAN sampai bikin
+// endpoint pemanggil ikut gagal -- cukup skip konteks memory-nya.
+async function buildMemoryContextBlock(userSupabase, userId, sectionHeading) {
+  let memoryContextBlock = '';
+  let memoryItemsInjected = 0;
+  try {
+    const { data: pastMemories, error: memoryError } = await userSupabase
+      .from('podcast_memory')
+      .select('title, topics, summary, created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(MAX_MEMORY_ITEMS);
+
+    if (memoryError) {
+      console.warn('⚠️ [Podcast Memory] Gagal mengambil riwayat memory:', memoryError.message);
+    } else if (Array.isArray(pastMemories) && pastMemories.length > 0) {
+      memoryItemsInjected = pastMemories.length;
+      const memoryLines = pastMemories
+        .map((m, idx) => {
+          const topicsStr = Array.isArray(m.topics) && m.topics.length > 0 ? m.topics.join(', ') : '-';
+          return `${idx + 1}. "${m.title}" (topik: ${topicsStr}) -- ${m.summary || ''}`;
+        })
+        .join('\n');
+
+      memoryContextBlock = `
+${sectionHeading}
+${memoryLines}
+
+ATURAN PENGGUNAAN RIWAYAT (WAJIB DIIKUTI, JANGAN DILANGGAR):
+- Riwayat di atas HANYA konteks tambahan, BUKAN materi yang harus dibahas.
+- Kalau TIDAK ada riwayat yang berhubungan secara bermakna dengan
+  pertanyaan/materi saat ini, JANGAN memaksakan hubungan -- abaikan
+  riwayat tersebut sepenuhnya, JANGAN menyebutnya sama sekali.
+- Kalau ADA riwayat yang relevan, kamu BOLEH menyinggungnya sesekali
+  secara natural -- tapi jangan dipaksakan, cukup kalau memang relevan.
+`;
+    }
+  } catch (memErr) {
+    console.warn('⚠️ [Podcast Memory] Error tak terduga saat mengambil memory:', memErr?.message);
+  }
+
+  return { memoryContextBlock, memoryItemsInjected };
+}
+
 // ============================================================
 // 📊 USAGE TRACKING & RATE LIMITING (Milestone 16)
 // ============================================================
@@ -790,57 +844,13 @@ app.post('/api/generate-script', requireAuth, async (req, res) => {
 
     const cleanText = text.trim().substring(0, 12000);
 
-    // 🧠 Track B - M2: ambil podcast_memory user (dibatasi MAX_MEMORY_ITEMS
-    // terbaru) buat dikasih sebagai KONTEKS ke Gemini. Sengaja TIDAK ada
-    // "relevance search" terpisah di sini -- metadata-nya udah ringkas
-    // (title+topics+summary per podcast), jadi Gemini sendiri yang menilai
-    // relevansinya lewat instruksi guardrail di prompt (lihat di bawah).
-    // Kalau nanti daftar ini kebesaran (~40-50+ podcast), baru dipikirin
-    // RAG/embedding -- bukan sekarang.
-    //
-    // Fail-open: kalau query memory gagal (misal tabel belum ke-migrate di
-    // environment lain), JANGAN sampai bikin generate podcast utama ikut
-    // gagal -- cukup skip konteks memory-nya.
-    let memoryContextBlock = '';
-    let memoryItemsInjected = 0;
-    try {
-      const { data: pastMemories, error: memoryError } = await req.supabase
-        .from('podcast_memory')
-        .select('title, topics, summary, created_at')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(MAX_MEMORY_ITEMS);
-
-      if (memoryError) {
-        console.warn('⚠️ [Podcast Memory] Gagal mengambil riwayat memory:', memoryError.message);
-      } else if (Array.isArray(pastMemories) && pastMemories.length > 0) {
-        memoryItemsInjected = pastMemories.length;
-        const memoryLines = pastMemories
-          .map((m, idx) => {
-            const topicsStr = Array.isArray(m.topics) && m.topics.length > 0 ? m.topics.join(', ') : '-';
-            return `${idx + 1}. "${m.title}" (topik: ${topicsStr}) -- ${m.summary || ''}`;
-          })
-          .join('\n');
-
-        memoryContextBlock = `
-Riwayat Podcast yang Pernah Dibuat User Ini Sebelumnya (dari yang terbaru):
-${memoryLines}
-
-ATURAN PENGGUNAAN RIWAYAT (WAJIB DIIKUTI, JANGAN DILANGGAR):
-- Riwayat di atas HANYA konteks tambahan, BUKAN materi yang harus dibahas.
-- Kalau TIDAK ada riwayat yang berhubungan secara bermakna dengan materi
-  baru di bawah, JANGAN memaksakan hubungan -- abaikan riwayat tersebut
-  sepenuhnya dan bahas materi baru seperti biasa, TANPA menyebut riwayat
-  sama sekali.
-- Kalau ADA riwayat yang relevan, kamu BOLEH menyinggungnya sesekali
-  secara natural (mis. "Ini masih nyambung sama yang kita bahas soal ...")
-  -- tapi jangan dipaksakan di banyak segmen, cukup 1x singgungan natural
-  kalau memang relevan.
-`;
-      }
-    } catch (memErr) {
-      console.warn('⚠️ [Podcast Memory] Error tak terduga saat mengambil memory:', memErr?.message);
-    }
+    // 🧠 Track B - M2: pake fungsi bareng buildMemoryContextBlock (definisi
+    // di atas, dipakai juga oleh /api/ask-question buat B3).
+    const { memoryContextBlock, memoryItemsInjected } = await buildMemoryContextBlock(
+      req.supabase,
+      userId,
+      'Riwayat Podcast yang Pernah Dibuat User Ini Sebelumnya (dari yang terbaru):'
+    );
 
     // Step 4: jumlah kuis TETAP 10 di semua mode depth -- ini sengaja
     // dikunci biar eksperimen depth clean (variabel yang berubah cuma
@@ -1193,6 +1203,16 @@ app.post('/api/ask-question', requireAuth, async (req, res) => {
 
     const contextSegments = getContextForQuestion(podcastScript, currentIndex);
 
+    // 🧠 Track B - B3: Tutor AI sekarang juga dikasih akses ke podcast_memory
+    // yang sama kayak M2 -- sumber data & guardrail identik, cuma beda
+    // heading section-nya (disesuaikan konteks "menjawab pertanyaan", bukan
+    // "membuat podcast baru").
+    const { memoryContextBlock, memoryItemsInjected } = await buildMemoryContextBlock(
+      req.supabase,
+      req.user.id,
+      'Riwayat Podcast yang Pernah Dibuat User Ini Sebelumnya (dari yang terbaru):'
+    );
+
     const prompt = `
 Bertindaklah sebagai seorang Tutor AI yang ramah, membantu, dan jelas.
 Learner sedang mendengarkan podcast edukasi dan menghentikan putaran audio untuk mengajukan pertanyaan.
@@ -1204,7 +1224,7 @@ ${(sourceMaterial || '').substring(0, 8000) || 'Tidak ada teks materi tambahan.'
 
 Konteks Percakapan Podcast Terakhir Didegar (maksimal 4 segmen):
 ${JSON.stringify(contextSegments, null, 2)}
-
+${memoryContextBlock}
 Pertanyaan Learner:
 "${question.trim()}"
 
@@ -1217,6 +1237,8 @@ Aturan Jawaban:
 
     const response = await callGeminiWithRetry(prompt);
     const answerText = response.text ? response.text.trim() : 'Maaf, saya tidak dapat menjawab pertanyaan tersebut saat ini.';
+
+    console.log(`📊 [Ask Question Metrics] memoryItemsInjected=${memoryItemsInjected}`);
 
     res.json({
       success: true,
