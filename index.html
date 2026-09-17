@@ -642,7 +642,29 @@
       color: var(--text, inherit);
     }
     .bubble.interjection .interjection-answer {
-      font-size: 0.88rem; line-height: 1.5; margin: 0; opacity: 0.9;
+      font-size: 0.88rem; line-height: 1.5; margin: 0 0 8px 0; opacity: 0.9;
+    }
+    /* 🅰️2: tombol "upgrade" interjection teks jadi audio beneran */
+    .interjection-voice-btn {
+      font-size: 0.72rem; font-weight: 700; padding: 5px 10px;
+      border-radius: 999px; border: 1px solid #F59E0B; background: transparent;
+      color: #F59E0B; cursor: pointer; transition: all 0.15s ease;
+    }
+    .interjection-voice-btn:hover { background: rgba(245, 158, 11, 0.12); }
+    .interjection-voice-btn:disabled { opacity: 0.6; cursor: default; }
+
+    /* 🅰️2: segmen hasil "upgrade" -- ini BUKAN lagi interjection teks
+       doang, ini udah nyempil beneran ke currentPodcastScript/
+       currentAudioSegments dan BISA diputar kayak bubble biasa. Warna
+       amber dipertahanin (biar keliatan asal-usulnya dari nyela user),
+       tapi cursor & interaksi balik normal (nggak dashed/nggak "default"
+       kayak versi teks doang di .bubble.interjection). */
+    .bubble.interjection-voice { border-left-color: #F59E0B; }
+    .bubble.interjection-voice .interjection-voice-tag {
+      display: inline-block; font-size: 0.65rem; font-weight: 800;
+      color: #F59E0B; background: rgba(245, 158, 11, 0.12);
+      padding: 2px 7px; border-radius: 999px; margin-left: 6px;
+      text-transform: uppercase; letter-spacing: 0.03em;
     }
 
     .quiz-item {
@@ -1742,10 +1764,19 @@
     function renderScriptBox() {
       const scriptBox = document.getElementById('scriptContainer');
       scriptBox.innerHTML = currentPodcastScript.map((item, idx) => {
+        // 🅰️2: item hasil "upgrade" jadi suara (dulunya interjection teks,
+        // sekarang udah nyempil beneran ke array ini) dikasih tag kecil
+        // biar keliatan asal-usulnya, tapi tetep dirender & bisa diklik
+        // persis kayak bubble segmen biasa.
+        const isVoiceInterjection = !!item.isInterjection;
+        const bubbleClass = `bubble ${item.speaker === 'Rian' ? 'rian' : 'maya'}${isVoiceInterjection ? ' interjection-voice' : ''}`;
+        const voiceTag = isVoiceInterjection ? `<span class="interjection-voice-tag">🎙️ Nyela</span>` : '';
+
         const mainBubble = `
-        <div id="script-bubble-${idx}" onclick="loadAndPlaySegment(${idx})" class="bubble ${item.speaker === 'Rian' ? 'rian' : 'maya'}">
+        <div id="script-bubble-${idx}" onclick="loadAndPlaySegment(${idx})" class="${bubbleClass}">
           <div style="font-weight:800; font-size:0.75rem; color:var(--primary); margin-bottom:4px; display:flex; align-items:center;">
             <span>${item.speaker} · ${item.speaker === 'Rian' ? 'Host' : 'Expert'}</span>
+            ${voiceTag}
             <span class="bubble-eq eq"><span></span><span></span><span></span><span></span></span>
           </div>
           <p style="margin:0; font-size:0.9rem; line-height:1.5;">${item.text}</p>
@@ -1757,10 +1788,122 @@
           <div class="interjection-label">💬 Kamu nyela</div>
           <p class="interjection-question">${escapeHtml(itj.question)}</p>
           <p class="interjection-answer">${escapeHtml(itj.answer)}</p>
+          <button type="button" class="interjection-voice-btn" id="voice-btn-${itj.id}" onclick="event.stopPropagation(); turnInterjectionIntoVoice('${itj.id}')">
+            🎙️ Ubah jadi suara
+          </button>
         </div>`).join('');
 
         return mainBubble + interjectionBubbles;
       }).join('');
+    }
+
+    // 🅰️2: "upgrade" 1 interjection teks (A1) jadi segmen bersuara beneran.
+    // Bedanya sama A1: hasilnya BENERAN disisipkan ke currentPodcastScript
+    // + currentAudioSegments (bukan disimpen terpisah lagi), jadi ikut
+    // masuk alur playback normal DAN ke-persist ke Supabase.
+    async function turnInterjectionIntoVoice(interjectionId) {
+      const itj = currentInterjections.find(i => i.id === interjectionId);
+      if (!itj) return;
+
+      const btn = document.getElementById(`voice-btn-${interjectionId}`);
+      if (btn) {
+        btn.disabled = true;
+        btn.innerText = '⏳ Menyiapkan suara...';
+      }
+
+      try {
+        const headers = await getAuthHeaders();
+        const sourceMaterial = document.getElementById('materiInput').value.trim();
+
+        const res = await fetchWithTimeout(`${API_BASE}/api/ask-question-voice`, {
+          method: 'POST', headers,
+          body: JSON.stringify({
+            question: itj.question,
+            currentIndex: itj.afterIndex,
+            podcastScript: currentPodcastScript,
+            sourceMaterial,
+            podcast_id: currentActivePodcastId
+          })
+        }, 60000);
+
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Gagal membuat versi suara');
+
+        // Buang dari array interjection teks (A1) -- karena sekarang udah
+        // jadi segmen beneran, bukan lagi tampilan terpisah.
+        currentInterjections = currentInterjections.filter(i => i.id !== interjectionId);
+
+        // Sisipkan TEPAT setelah segmen tempat pertanyaan diajukan, DI DUA
+        // array sekaligus (script & audio) biar index-nya tetap 1:1 --
+        // inilah bedanya sama A1 yang sengaja nggak nyentuh array ini.
+        const insertAt = itj.afterIndex + 1;
+        currentPodcastScript.splice(insertAt, 0, {
+          speaker: 'Maya',
+          text: data.answerText,
+          isInterjection: true
+        });
+        currentAudioSegments.splice(insertAt, 0, {
+          speaker: 'Maya',
+          audioUrl: data.audioUrl
+        });
+        // Rapikan ulang field .index tiap segmen audio (nggak dipakai buat
+        // lookup playback -- itu pakai posisi array -- tapi tetap dijaga
+        // konsisten buat kebersihan data / kalau dipakai fitur lain nanti).
+        currentAudioSegments = currentAudioSegments.map((seg, i) => ({ ...seg, index: i }));
+
+        // Penting: array-nya baru aja "membesar" di posisi insertAt. Semua
+        // REFERENSI index yang nunjuk ke posisi >= insertAt jadi basi kalau
+        // nggak ikut digeser +1:
+        // 1. Interjection teks (A1) lain yang afterIndex-nya ada di/setelah
+        //    titik sisipan -- kalau nggak digeser, nanti nongolnya nempel
+        //    ke segmen yang salah (yang sekarang udah geser posisi).
+        currentInterjections = currentInterjections.map(other =>
+          other.afterIndex >= insertAt ? { ...other, afterIndex: other.afterIndex + 1 } : other
+        );
+        // 2. Posisi playback yang lagi aktif -- biar tetap nunjuk ke konten
+        //    yang sama persis kayak sebelum disisipkan (bukan malah geser
+        //    ke segmen setelahnya).
+        if (currentSegmentIndex >= insertAt) {
+          currentSegmentIndex += 1;
+        }
+
+        renderScriptBox();
+
+        // renderScriptBox() replace innerHTML total, jadi highlight bubble
+        // yang lagi aktif (active-speaking/is-playing) ikut ilang -- re-apply
+        // manual ke bubble yang sekarang di currentSegmentIndex (yang udah
+        // digeser dengan benar di atas kalau perlu), TANPA restart audio.
+        const activeBubbleAfterInsert = document.getElementById(`script-bubble-${currentSegmentIndex}`);
+        if (activeBubbleAfterInsert) activeBubbleAfterInsert.classList.add('active-speaking');
+        setPlayingState(segmentAudioPlayer ? !segmentAudioPlayer.paused : false);
+
+        const newBubble = document.getElementById(`script-bubble-${insertAt}`);
+        if (newBubble) newBubble.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+        // Persist ke Supabase biar tetap ada kalau podcast dibuka lagi nanti.
+        if (currentActivePodcastId && currentUserSession && currentUserSession.user) {
+          try {
+            await supabaseClient
+              .from('podcasts')
+              .update({
+                podcast_script: currentPodcastScript,
+                audio_segments: currentAudioSegments
+              })
+              .eq('id', currentActivePodcastId)
+              .eq('user_id', currentUserSession.user.id);
+          } catch (persistErr) {
+            console.warn('⚠️ Gagal menyimpan interjection suara ke database:', persistErr.message);
+          }
+        }
+      } catch (err) {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerText = '🎙️ Coba lagi';
+        }
+        alert(err.message === 'TIMEOUT'
+          ? 'Waktu pembuatan suara habis. Silakan coba lagi.'
+          : (err.message || 'Gagal membuat versi suara. Silakan coba lagi.'));
+      }
     }
 
     function loadAndPlaySegment(index, autoPlay = true) {

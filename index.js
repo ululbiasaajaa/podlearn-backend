@@ -1251,6 +1251,146 @@ Aturan Jawaban:
   }
 });
 
+// ============================================================
+// 🅰️2 Endpoint 4b: Ask Question - VOICE Interjection (Protected)
+// ============================================================
+// Beda dari /api/ask-question (jawaban formal, teks doang): endpoint ini
+// generate jawaban dengan GAYA BICARA PODCAST natural -- sengaja pake
+// prompt TERPISAH (bukan reuse prompt Tutor AI formal di atas), karena
+// yang dibutuhkan di sini adalah transisi natural + gaya lisan ringkas,
+// BUKAN jawaban tertulis yang lengkap. Hasilnya di-TTS pake suara Maya,
+// terus di-upload biar bisa disisipkan LANGSUNG ke antrian playback
+// podcast oleh frontend (bukan cuma nampil di transkrip doang kayak A1).
+app.post('/api/ask-question-voice', requireAuth, async (req, res) => {
+  const userId = req.user.id;
+  try {
+    const { question, currentIndex, podcastScript, sourceMaterial, podcast_id } = req.body;
+
+    if (!question || typeof question !== 'string' || !question.trim()) {
+      return res.status(400).json({ success: false, error: 'Pertanyaan tidak boleh kosong.' });
+    }
+    if (typeof currentIndex !== 'number' || !podcastScript) {
+      return res.status(400).json({ success: false, error: 'Parameter currentIndex dan podcastScript wajib diisi' });
+    }
+
+    // 📊 Sama kayak /api/ask-question -- pake action type 'ask_question' yang
+    // sama (bukan quota terpisah), karena ini secara konsep masih "1 aksi
+    // tanya ke Tutor AI", cuma di-upgrade ke versi suara.
+    const usageCheck = await checkAndLogUsage(req.supabase, userId, 'ask_question');
+    if (!usageCheck.allowed) {
+      return res.status(429).json({
+        success: false,
+        error: `Batas harian tanya Tutor AI tercapai (${usageCheck.currentCount}/${usageCheck.limit} hari ini). Coba lagi besok ya!`
+      });
+    }
+
+    const contextSegments = getContextForQuestion(podcastScript, currentIndex);
+
+    // 🧠 Sama kayak B3 -- Tutor AI versi suara juga sadar podcast_memory.
+    const { memoryContextBlock } = await buildMemoryContextBlock(
+      req.supabase,
+      userId,
+      'Riwayat Podcast yang Pernah Dibuat User Ini Sebelumnya (dari yang terbaru):'
+    );
+
+    const prompt = `
+Kamu berperan sebagai "Maya", host ahli yang ramah dalam sebuah podcast
+edukasi santai. Podcast SEDANG DI-PAUSE karena pendengar (learner) tiba-tiba
+nanya sesuatu di tengah obrolan, dan kamu mau jawab pertanyaannya SECARA
+LISAN, seolah kamu ngomong langsung -- BUKAN menulis jawaban formal/tertulis.
+
+Materi Sumber Utama (Source Material):
+"""
+${(sourceMaterial || '').substring(0, 8000) || 'Tidak ada teks materi tambahan.'}
+"""
+
+Konteks Percakapan Podcast Terakhir Didengar (maksimal 4 segmen):
+${JSON.stringify(contextSegments, null, 2)}
+${memoryContextBlock}
+Pertanyaan Learner:
+"${question.trim()}"
+
+ATURAN GAYA JAWABAN (WAJIB DIIKUTI, JANGAN DILANGGAR):
+1. Mulai dengan transisi singkat & natural yang mengakui pertanyaan ini
+   muncul di tengah podcast (variasikan kalimatnya, jangan selalu sama
+   persis -- contoh gaya: "Eh, ada yang nanya nih..." / "Oh, pertanyaan
+   bagus nih...").
+2. Gunakan gaya BAHASA LISAN santai ala podcast, BUKAN bahasa tulisan
+   formal/kaku.
+3. Tetap jawab berdasarkan Materi Sumber dan Konteks Percakapan di atas --
+   JANGAN mengarang informasi yang tidak tertera di sana.
+4. RINGKAS -- maksimal sekitar 80-120 kata, karena teks ini bakal
+   DIBACAKAN sebagai audio, bukan dibaca sebagai teks panjang.
+5. Keluarkan HANYA teks yang akan dibacakan -- TANPA label pembicara
+   (jangan tulis "Maya:" di depan), TANPA tanda kutip pembuka/penutup.
+`;
+
+    const response = await callGeminiWithRetry(prompt);
+    const spokenText = response.text ? response.text.trim() : '';
+
+    if (!spokenText) {
+      return res.status(500).json({ success: false, error: 'Gagal membuat jawaban versi suara.' });
+    }
+
+    // TTS pake suara Maya -- konsisten sama voice yang dipake buat speaker
+    // "Maya" di segmen podcast biasa (lihat /api/generate-audio-segments).
+    const tts = new EdgeTTS({
+      voice: 'id-ID-GadisNeural',
+      lang: 'id-ID',
+      outputFormat: 'audio-24khz-48kbitrate-mono-mp3',
+      timeout: 30000
+    });
+
+    const uniqueFilename = `interjection_${crypto.randomUUID()}.mp3`;
+    const absolutePath = path.resolve(tempAudioDir, uniqueFilename);
+    let finalAudioUrl = `/temp-audio/${uniqueFilename}`;
+
+    try {
+      await tts.ttsPromise(spokenText, absolutePath);
+    } catch (ttsError) {
+      console.error('❌ [Interjection TTS Error] message:', ttsError?.message);
+      return res.status(500).json({ success: false, error: 'Gagal membuat audio jawaban.' });
+    }
+
+    // Upload ke storage permanen (kalau ada podcast_id & user login), sama
+    // pola kayak /api/generate-audio-segments -- biar audio-nya nggak ikut
+    // ke-cleanup otomatis (temp-audio dibersihkan tiap 15 menit) dan tetap
+    // ada kalau podcast dibuka lagi nanti. Fallback ke temp-audio lokal
+    // kalau upload gagal (podcast tetap bisa diputar SEKARANG, cuma nggak
+    // persistent lintas sesi).
+    if (userId && req.supabase && podcast_id) {
+      try {
+        const storagePath = `${userId}/${podcast_id}/interjection_${crypto.randomUUID()}.mp3`;
+        const fileBuffer = fs.readFileSync(absolutePath);
+        const { error: uploadError } = await req.supabase.storage
+          .from('podcast-audio')
+          .upload(storagePath, fileBuffer, { contentType: 'audio/mpeg', upsert: true });
+
+        if (!uploadError) {
+          const { data: publicUrlData } = req.supabase.storage
+            .from('podcast-audio')
+            .getPublicUrl(storagePath);
+          finalAudioUrl = publicUrlData.publicUrl;
+          if (fs.existsSync(absolutePath)) fs.unlinkSync(absolutePath);
+        }
+      } catch (stErr) {
+        // Fallback lokal aktif jika upload ke storage mengalami kendala
+      }
+    }
+
+    res.json({
+      success: true,
+      answerText: spokenText,
+      audioUrl: finalAudioUrl
+    });
+
+  } catch (error) {
+    console.error('❌ [Ask Question Voice Error] message:', error?.message);
+    console.error('❌ [Ask Question Voice Error] stack:', error?.stack);
+    res.status(500).json({ success: false, error: 'Gagal memproses pertanyaan versi suara' });
+  }
+});
+
 // Endpoint 5: Hapus Podcast (Protected & Verified Ownership via User RLS)
 app.post('/api/delete-podcast', requireAuth, async (req, res) => {
   try {
