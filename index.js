@@ -308,6 +308,27 @@ async function callGeminiWithRetry(prompt, options = {}, retries) {
   const { useSchema = false, maxOutputTokens } = options;
   const maxRetries = retries || apiKeys.length * 2;
 
+  // 🔧 FIX: batasi TOTAL waktu retry akibat overload (503) dengan sebuah
+  // "budget" waktu, terpisah dari jumlah maxRetries.
+  //
+  // Kejadian nyata yang men-trigger fix ini: Gemini overload berat, retry
+  // sampai 7x dengan backoff (2s/4s/8s/16s/20s/20s/20s) makan waktu total
+  // 145.9 DETIK sebelum akhirnya sukses -- padahal frontend cuma nunggu
+  // 120 detik. Akibatnya: frontend udah nampilin "waktu pemrosesan habis"
+  // ke user DULUAN, podcast-nya nggak pernah kesimpen ke DB (karena alur
+  // simpan baru jalan setelah frontend nerima response sukses), tapi
+  // backend tetap lanjut jalan di belakang layar sampai sukses sia-sia
+  // (responnya nggak ada yang nangkep lagi). User juga kena potong usage
+  // quota harian untuk percobaan yang hasilnya nggak pernah dia lihat.
+  //
+  // Solusi: kalau elapsed waktu retry udah mendekati budget ini, LANGSUNG
+  // throw daripada terus retry -- lebih baik gagal cepat & jelas (user
+  // bisa retry manual) daripada "sukses diam-diam" lewat dari waktu yang
+  // ditunggu frontend. Frontend timeout DINAIKKAN ke 150 detik supaya ada
+  // jarak aman di atas budget 100 detik ini (lihat index.html).
+  const OVERLOAD_RETRY_BUDGET_MS = 100000;
+  const retryStartTime = Date.now();
+
   for (let i = 0; i < maxRetries; i++) {
     try {
       const client = getAiClient();
@@ -401,10 +422,17 @@ async function callGeminiWithRetry(prompt, options = {}, retries) {
         }
       } else if (isOverloaded) {
         const isLastAttempt = i === maxRetries - 1;
-        if (isLastAttempt) {
+        const backoffMs = Math.min(2000 * Math.pow(2, i), 20000);
+        const elapsedMs = Date.now() - retryStartTime;
+
+        // Nyerah lebih cepat kalau attempt terakhir ATAU nambah retry lagi
+        // bakal ngelewatin budget waktu -- daripada retry yang percuma
+        // karena frontend udah pasti keburu timeout duluan.
+        if (isLastAttempt || (elapsedMs + backoffMs) > OVERLOAD_RETRY_BUDGET_MS) {
+          console.warn(`⚠️ [Gemini Overload] Nyerah setelah ${i + 1} percobaan (elapsed=${elapsedMs}ms) -- budget waktu retry habis.`);
           throw error;
         }
-        const backoffMs = Math.min(2000 * Math.pow(2, i), 20000);
+
         console.warn(`⚠️ [Gemini Overload] Percobaan ${i + 1}/${maxRetries} gagal (503), retry dalam ${backoffMs}ms...`);
         await new Promise(r => setTimeout(r, backoffMs));
       } else {

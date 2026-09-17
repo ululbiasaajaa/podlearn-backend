@@ -1642,9 +1642,15 @@
         stepText.innerText = "1/3 Sedang meracik naskah & kuis (Gemini AI)...";
         progressBar.style.width = "33%";
 
+        // 🔧 FIX: dinaikin dari 120s -> 150s. Backend sekarang punya budget
+        // retry overload (503) maksimal 100s sebelum nyerah (lihat komentar
+        // di callGeminiWithRetry, index.js) -- 150s ngasih jarak aman di
+        // atas itu (budget 100s + waktu request Gemini terakhir + overhead
+        // jaringan), supaya frontend nggak keburu nyerah duluan sebelum
+        // backend sempat kasih jawaban FINAL (sukses ataupun gagal jelas).
         const scriptRes = await fetchWithTimeout(`${API_BASE}/api/generate-script`, {
           method: 'POST', headers, body: JSON.stringify({ text, depth: selectedDepth })
-        }, 120000);
+        }, 150000);
         const scriptData = await scriptRes.json();
 
         if (!scriptData.success) throw new Error(scriptData.error || 'Gagal generate naskah');
