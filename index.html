@@ -1827,7 +1827,11 @@
         }, 60000);
 
         const data = await res.json();
-        if (!data.success) throw new Error(data.error || 'Gagal membuat versi suara');
+        if (!data.success) {
+          const err = new Error(data.error || 'Gagal membuat versi suara');
+          err.overloaded = !!data.overloaded;
+          throw err;
+        }
 
         // Backend sekarang balikin ARRAY `turns` (Rian nyambungin dulu,
         // baru Maya jawab) -- bukan 1 teks + 1 audio tunggal kayak v1.
@@ -1916,7 +1920,9 @@
         }
         alert(err.message === 'TIMEOUT'
           ? 'Waktu pembuatan suara habis. Silakan coba lagi.'
-          : (err.message || 'Gagal membuat versi suara. Silakan coba lagi.'));
+          : err.overloaded
+            ? 'Server AI sedang sibuk saat ini. Pertanyaanmu masih ada di sini -- tinggal klik "🎙️ Coba lagi" beberapa saat lagi.'
+            : (err.message || 'Gagal membuat versi suara. Silakan coba lagi.'));
       }
     }
 
@@ -1997,7 +2003,11 @@
         }, 45000);
 
         const data = await res.json();
-        if (!data.success) throw new Error(data.error || 'Gagal mendapatkan jawaban');
+        if (!data.success) {
+          const err = new Error(data.error || 'Gagal mendapatkan jawaban');
+          err.overloaded = !!data.overloaded;
+          throw err;
+        }
 
         answerText.innerText = data.answer;
 
@@ -2025,6 +2035,12 @@
           answerText.innerText = '❌ Sesi Anda telah berakhir. Silakan login kembali.';
         } else if (err.message === 'TIMEOUT') {
           answerText.innerText = '❌ Waktu permintaan habis. Silakan coba lagi.';
+        } else if (err.overloaded) {
+          // 🔧 Server AI (Gemini) lagi sibuk, bukan error di kode kita --
+          // pertanyaan usernya nggak dibuang (qInput.value TETAP diisi,
+          // cuma dikosongkan di jalur sukses di atas), jadi cukup kasih
+          // tau kenapa + suruh klik Tanya lagi, nggak perlu ngetik ulang.
+          answerText.innerText = '⏳ Server AI sedang sibuk saat ini. Pertanyaanmu masih tersimpan di kotak -- coba klik "Tanya" lagi dalam beberapa saat.';
         } else {
           answerText.innerText = '❌ ' + (err.message || 'Jawaban AI gagal dimuat. Silakan coba lagi.');
         }

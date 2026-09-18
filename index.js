@@ -297,6 +297,20 @@ function rotateKey() {
   currentKeyIndex = (currentKeyIndex + 1) % apiKeys.length;
 }
 
+// 🔧 Helper dipakai bareng oleh callGeminiWithRetry (buat mutusin retry)
+// DAN endpoint-endpoint yang manggil dia (buat mutusin respons error apa
+// yang dikirim ke frontend) -- biar deteksi "ini overload atau bukan"
+// nggak keduplikat/ke-drift beda-beda di banyak tempat.
+function isGeminiOverloadedError(error) {
+  return !!(
+    error?.status === 503 ||
+    error?.message?.includes('503') ||
+    error?.message?.includes('UNAVAILABLE') ||
+    error?.message?.includes('overloaded') ||
+    error?.message?.includes('high demand')
+  );
+}
+
 async function callGeminiWithRetry(prompt, options = {}, retries) {
   // 🔧 MILESTONE 16: tambah opsi maxOutputTokens eksplisit.
   // Sebelumnya field ini TIDAK PERNAH di-set, murni default API.
@@ -413,12 +427,7 @@ async function callGeminiWithRetry(prompt, options = {}, retries) {
       // exponential backoff (2s, 4s, 8s, 16s, ... dibatasi max 20s), tanpa
       // perlu rotate key karena ini bukan soal quota/rate limit per-key,
       // tapi server Gemini-nya sendiri yang lagi penuh.
-      const isOverloaded =
-        error?.status === 503 ||
-        error?.message?.includes('503') ||
-        error?.message?.includes('UNAVAILABLE') ||
-        error?.message?.includes('overloaded') ||
-        error?.message?.includes('high demand');
+      const isOverloaded = isGeminiOverloadedError(error);
 
       if (isRateLimit) {
         rotateKey();
@@ -1252,7 +1261,19 @@ Aturan Jawaban:
     });
 
   } catch (error) {
-    console.error('❌ [Ask Question Error]');
+    // 🔧 Kasih respons KHUSUS kalau ini overload Gemini (503, sudah nyerah
+    // retry di callGeminiWithRetry) -- biar frontend bisa nampilin pesan
+    // yang jelas ("server AI lagi sibuk, coba lagi") + tetep nyimpen teks
+    // pertanyaan usernya, BUKAN pesan error generik yang bikin bingung.
+    const overloaded = isGeminiOverloadedError(error);
+    console.error(`❌ [Ask Question Error]${overloaded ? ' (Gemini overload)' : ''}`);
+    if (overloaded) {
+      return res.status(503).json({
+        success: false,
+        overloaded: true,
+        error: 'Server AI sedang sibuk saat ini. Coba tanya lagi dalam beberapa saat ya.'
+      });
+    }
     res.status(500).json({ success: false, error: 'Gagal memproses pertanyaan' });
   }
 });
@@ -1450,8 +1471,16 @@ TANPA label pembicara di depannya, TANPA tanda kutip pembuka/penutup.
     });
 
   } catch (error) {
-    console.error('❌ [Ask Question Voice Error] message:', error?.message);
+    const overloaded = isGeminiOverloadedError(error);
+    console.error(`❌ [Ask Question Voice Error]${overloaded ? ' (Gemini overload)' : ''} message:`, error?.message);
     console.error('❌ [Ask Question Voice Error] stack:', error?.stack);
+    if (overloaded) {
+      return res.status(503).json({
+        success: false,
+        overloaded: true,
+        error: 'Server AI sedang sibuk saat ini. Coba lagi dalam beberapa saat ya.'
+      });
+    }
     res.status(500).json({ success: false, error: 'Gagal memproses pertanyaan versi suara' });
   }
 });
