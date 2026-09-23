@@ -1675,7 +1675,11 @@
         }, 150000);
         const scriptData = await scriptRes.json();
 
-        if (!scriptData.success) throw new Error(scriptData.error || 'Gagal generate naskah');
+        if (!scriptData.success) {
+          const err = new Error(scriptData.error || 'Gagal generate naskah');
+          err.overloaded = !!scriptData.overloaded;
+          throw err;
+        }
 
         const {
           podcast_script, quiz, depth: resolvedDepth,
@@ -1734,6 +1738,8 @@
           alert('Sesi Anda telah berakhir. Silakan login kembali.');
         } else if (err.message === 'TIMEOUT') {
           alert('Waktu pemrosesan habis. Silakan coba lagi.');
+        } else if (err.overloaded) {
+          alert('⏳ Server AI sedang sibuk saat ini. Ini bukan masalah di materi atau akun kamu -- coba generate ulang dalam beberapa saat ya.');
         } else {
           alert(err.message || 'Naskah atau audio gagal dibuat. Silakan coba lagi.');
         }

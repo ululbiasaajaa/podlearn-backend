@@ -934,8 +934,22 @@ ${cleanText}
       data: { ...parsedData, depth },
     });
   } catch (error) {
-    console.error('❌ [Generate Script Error] message:', error?.message);
+    // 🔧 Sama kayak fix di /api/ask-question & /api/ask-question-voice --
+    // endpoint ini yang justru PALING sering kena overload (soalnya 1 call
+    // paling berat: podcast_script + quiz + memory metadata sekaligus).
+    // Kasih flag `overloaded` + status 503 yang jelas, bukan 500 generik,
+    // biar frontend bisa nampilin pesan "server AI lagi sibuk" yang jelas
+    // ke user, alih-alih pesan gagal generik yang bikin bingung.
+    const overloaded = isGeminiOverloadedError(error);
+    console.error(`❌ [Generate Script Error]${overloaded ? ' (Gemini overload)' : ''} message:`, error?.message);
     console.error('❌ [Generate Script Error] stack:', error?.stack);
+    if (overloaded) {
+      return res.status(503).json({
+        success: false,
+        overloaded: true,
+        error: 'Server AI sedang sibuk saat ini. Coba generate ulang dalam beberapa saat ya.'
+      });
+    }
     res.status(500).json({ success: false, error: 'Gagal membuat naskah podcast' });
   } finally {
     releaseGenerationLock(userId, 'generate-script');
