@@ -12,6 +12,7 @@ import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import { MAX_MATERIAL_CHARS, MAX_EXTRACT_CHARS, limitText, cleanExtractedText } from './lib/material.js';
 import { resolveDepth, getContextForQuestion } from './lib/podcast-helpers.js';
+import { normalizeQuiz } from './lib/quiz.js';
 
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
@@ -399,13 +400,22 @@ async function callGeminiWithRetry(prompt, options = {}, retries) {
                     type: 'ARRAY',
                     items: { type: 'STRING' }
                   },
-                  answer: { type: 'STRING' }
+                  answer: { type: 'STRING' },
+                  // 📝 Bedah hasil kuis: konsep yang diuji + index segmen
+                  // podcast_script yang membahas jawabannya. Divalidasi
+                  // ulang di lib/quiz.js (normalizeQuiz), jangan dipercaya mentah.
+                  concept: { type: 'STRING' },
+                  source_segment: { type: 'INTEGER' }
                 },
-                required: ['question', 'options', 'answer']
+                required: ['question', 'options', 'answer', 'concept', 'source_segment'],
+                propertyOrdering: ['question', 'options', 'answer', 'concept', 'source_segment']
               }
             }
           },
-          required: ['title', 'topics', 'key_concepts', 'summary', 'podcast_script', 'quiz']
+          required: ['title', 'topics', 'key_concepts', 'summary', 'podcast_script', 'quiz'],
+          // Naskah WAJIB ditulis sebelum kuis, supaya source_segment di kuis
+          // merujuk ke segmen yang memang sudah ada.
+          propertyOrdering: ['title', 'topics', 'key_concepts', 'summary', 'podcast_script', 'quiz']
         };
       }
 
@@ -881,6 +891,8 @@ ATURAN FORMAT KUIS (WAJIB DIIKUTI PERSIS, JANGAN DILANGGAR):
 - Setiap soal harus punya TEPAT 4 opsi jawaban.
 - Setiap opsi WAJIB diawali huruf dan titik, contoh: "A. teks jawaban", "B. teks jawaban", "C. teks jawaban", "D. teks jawaban".
 - Field "answer" HANYA berisi SATU HURUF KAPITAL (A, B, C, atau D) yang sesuai opsi yang benar -- JANGAN sertakan teks jawaban di field ini, cukup hurufnya saja. Contoh benar: "B". Contoh salah: "B. Pengujian toksisitas...".
+- Field "concept": nama singkat konsep yang diuji soal itu (1-4 kata). Usahakan pakai istilah yang sama persis dengan salah satu item "key_concepts", supaya soal-soal dengan konsep yang sama bisa dikelompokkan.
+- Field "source_segment": nomor index (mulai dari 0) item di array "podcast_script" yang PALING JELAS membahas jawaban soal tersebut. Contoh: kalau jawabannya dijelaskan Maya di item ketiga naskah, isi 2. Setiap soal WAJIB bisa dijawab dari isi naskah podcast.
 
 Selain naskah podcast dan kuis, sertakan juga metadata ringkas berikut ini
 (BUKAN bagian dari naskah yang dibacakan, murni ringkasan tentang materi):
@@ -912,6 +924,10 @@ ${cleanText}
 
     const rawText = response.text || '';
     const parsedData = JSON.parse(rawText);
+    parsedData.quiz = normalizeQuiz(
+      parsedData.quiz,
+      Array.isArray(parsedData.podcast_script) ? parsedData.podcast_script.length : 0
+    );
 
     // 📊 Step 5: logging metrik depth -- fondasi buat eksperimen &
     // kalibrasi durasi nanti, tanpa perlu bikin dashboard analytics dulu.
@@ -923,7 +939,7 @@ ${cleanText}
         }, 0)
       : 0;
 
-    console.log(`📊 [Generate Script Metrics] depth=${depth} wordCount=${wordCount} segmentCount=${segmentCount} memoryItemsInjected=${memoryItemsInjected} materialChars=${material.originalLength} materialTruncated=${material.truncated}`);
+    console.log(`📊 [Generate Script Metrics] depth=${depth} wordCount=${wordCount} segmentCount=${segmentCount} memoryItemsInjected=${memoryItemsInjected} materialChars=${material.originalLength} materialTruncated=${material.truncated} quizWithSegment=${parsedData.quiz.filter(q => q.source_segment !== null).length}/${parsedData.quiz.length}`);
 
     res.json({
       success: true,
