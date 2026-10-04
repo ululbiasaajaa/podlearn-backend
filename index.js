@@ -10,6 +10,8 @@ import ffmpegInstaller from 'ffmpeg-static';
 import multer from 'multer';
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
+import { MAX_MATERIAL_CHARS, MAX_EXTRACT_CHARS, limitText, cleanExtractedText } from './lib/material.js';
+import { resolveDepth, getContextForQuestion } from './lib/podcast-helpers.js';
 
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
@@ -463,10 +465,8 @@ async function callGeminiWithRetry(prompt, options = {}, retries) {
 // 🎚️ MILESTONE 16 — PODCAST DEPTH CONTROL
 // ============================================================
 
-// Step 2: whitelist depth yang valid. Backend TIDAK PERNAH percaya
-// value depth dari frontend mentah-mentah -- kalau kosong/typo/nilai
-// aneh, fallback ke 'balanced'.
-const VALID_DEPTHS = ['concise', 'balanced', 'deep'];
+// Step 2: whitelist depth yang valid (VALID_DEPTHS + resolveDepth) ada di
+// lib/podcast-helpers.js supaya bisa dites tanpa nyalain server.
 
 // Step 3: kontrak per depth. Ini BUKAN sekadar "buat lebih panjang/pendek",
 // tapi instruksi struktural yang beda cara menjelaskan -- supaya yang
@@ -533,15 +533,6 @@ function acquireGenerationLock(userId, jobType) {
 
 function releaseGenerationLock(userId, jobType) {
   activeGenerationJobs.delete(`${userId}:${jobType}`);
-}
-
-function getContextForQuestion(podcastScript, currentIndex) {
-  if (!Array.isArray(podcastScript) || podcastScript.length === 0) return [];
-
-  const safeIndex = Math.min(Math.max(0, currentIndex), podcastScript.length - 1);
-  const startIndex = Math.max(0, safeIndex - 3);
-
-  return podcastScript.slice(startIndex, safeIndex + 1);
 }
 
 // ============================================================
@@ -796,20 +787,25 @@ app.post('/api/extract-file', requireAuth, upload.single('file'), async (req, re
 
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 
-    // Membersihkan karakter non-printable / binary liar
-    const cleanExtractedText = extractedText
-      .replace(/[\x00-\x09\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, ' ')
-      .trim()
-      .substring(0, 8000);
+    // Membersihkan karakter non-printable / binary liar. Teks TIDAK lagi
+    // dipotong ke batas materi di sini -- user perlu lihat isi dokumennya
+    // utuh dulu supaya bisa milih sendiri bagian yang mau dibahas (lihat
+    // lib/material.js). Yang dipotong cuma batas pengaman MAX_EXTRACT_CHARS.
+    const extracted = limitText(cleanExtractedText(extractedText), MAX_EXTRACT_CHARS);
 
-    if (!cleanExtractedText) {
+    if (!extracted.text) {
       return res.status(400).json({
         success: false,
         error: 'Dokumen tidak mengandung teks terbaca (mungkin berupa hasil scan gambar atau slide kosong).'
       });
     }
 
-    return res.json({ success: true, text: cleanExtractedText });
+    return res.json({
+      success: true,
+      text: extracted.text,
+      truncated: extracted.truncated,
+      originalLength: extracted.originalLength
+    });
 
   } catch (error) {
     console.error('❌ [Extract File Error]:', error.message || error);
@@ -846,7 +842,7 @@ app.post('/api/generate-script', requireAuth, async (req, res) => {
     // 🎚️ Step 2: defensive validation. Frontend cuma boleh kirim enum,
     // BUKAN instruksi prompt mentah. Kalau value-nya invalid/kosong/typo,
     // fallback diam-diam ke 'balanced' -- backend yang menentukan aturan.
-    const depth = VALID_DEPTHS.includes(req.body.depth) ? req.body.depth : 'balanced';
+    const depth = resolveDepth(req.body.depth);
 
     // 📊 Rate limit check: batasi jumlah podcast baru per-hari per-user
     const usageCheck = await checkAndLogUsage(req.supabase, req.user.id, 'create_podcast');
@@ -857,7 +853,10 @@ app.post('/api/generate-script', requireAuth, async (req, res) => {
       });
     }
 
-    const cleanText = text.trim().substring(0, 12000);
+    // Frontend sudah memperingatkan user sebelum generate kalau materi
+    // melebihi batas; di sini tetap dipotong + dicatat di log metrik.
+    const material = limitText(text, MAX_MATERIAL_CHARS);
+    const cleanText = material.text;
 
     // 🧠 Track B - M2: pake fungsi bareng buildMemoryContextBlock (definisi
     // di atas, dipakai juga oleh /api/ask-question buat B3).
@@ -924,7 +923,7 @@ ${cleanText}
         }, 0)
       : 0;
 
-    console.log(`📊 [Generate Script Metrics] depth=${depth} wordCount=${wordCount} segmentCount=${segmentCount} memoryItemsInjected=${memoryItemsInjected}`);
+    console.log(`📊 [Generate Script Metrics] depth=${depth} wordCount=${wordCount} segmentCount=${segmentCount} memoryItemsInjected=${memoryItemsInjected} materialChars=${material.originalLength} materialTruncated=${material.truncated}`);
 
     res.json({
       success: true,
@@ -1248,7 +1247,7 @@ Learner sedang mendengarkan podcast edukasi dan menghentikan putaran audio untuk
 
 Materi Sumber Utama (Source Material):
 """
-${(sourceMaterial || '').substring(0, 8000) || 'Tidak ada teks materi tambahan.'}
+${limitText(sourceMaterial, MAX_MATERIAL_CHARS).text || 'Tidak ada teks materi tambahan.'}
 """
 
 Konteks Percakapan Podcast Terakhir Didegar (maksimal 4 segmen):
@@ -1386,7 +1385,7 @@ BARIS 2 -- Speaker "Maya" (Expert):
 
 Materi Sumber Utama (Source Material):
 """
-${(sourceMaterial || '').substring(0, 8000) || 'Tidak ada teks materi tambahan.'}
+${limitText(sourceMaterial, MAX_MATERIAL_CHARS).text || 'Tidak ada teks materi tambahan.'}
 """
 
 Konteks Percakapan Podcast Terakhir Didengar (maksimal 4 segmen):

@@ -425,6 +425,23 @@
       box-shadow: 0 0 0 3px var(--primary-light);
     }
 
+    .materi-counter {
+      margin-top: 6px;
+      font-size: 0.75rem;
+      color: var(--ink-soft);
+      text-align: right;
+    }
+    .materi-counter.over { color: var(--danger); font-weight: 700; }
+    .materi-warning {
+      margin-top: 8px;
+      padding: 10px 12px;
+      border-radius: var(--radius-sm);
+      background: var(--tint-danger);
+      color: var(--danger);
+      font-size: 0.8rem;
+      line-height: 1.5;
+    }
+
     .or-divider {
       display: flex;
       align-items: center;
@@ -854,6 +871,8 @@
       <div class="or-divider">Atau Tempel Teks</div>
 
       <textarea id="materiInput" rows="4" placeholder="Contoh: Manusia butuh tidur 7-8 jam sehari untuk menjaga memori otak dan imunitas tubuh..."></textarea>
+      <div id="materiCounter" class="materi-counter"></div>
+      <div id="materiWarning" class="materi-warning hidden"></div>
 
       <!-- Depth Selector Horizontal Grid -->
       <div style="margin-top: 24px;">
@@ -1159,6 +1178,7 @@
       document.getElementById('resultContainer').classList.add('hidden');
       document.getElementById('historyListContainer').innerHTML = '';
       document.getElementById('materiInput').value = '';
+      updateMateriCounter();
       document.getElementById('fileNameDisplay').innerText = 'Belum ada file dipilih';
       document.getElementById('tutorAnswerBox').classList.add('hidden');
       document.getElementById('scoreBadge').classList.add('hidden');
@@ -1285,6 +1305,7 @@
 
       if (selectedPod.source_text) {
         document.getElementById('materiInput').value = selectedPod.source_text;
+        updateMateriCounter();
       }
 
       renderScriptBox();
@@ -1565,6 +1586,37 @@
       alert('Audio segmen ini tidak dapat diputar. Silakan coba muat ulang segmen.');
     });
 
+    // 📏 Batas materi yang dibahas satu podcast. HARUS sama dengan
+    // MAX_MATERIAL_CHARS di lib/material.js (backend memotong di angka itu).
+    // Sebelumnya pemotongan terjadi diam-diam; sekarang user lihat counter
+    // + peringatan, dan bisa milih sendiri bagian mana yang mau dibahas.
+    const MAX_MATERIAL_CHARS = 12000;
+
+    function formatNumber(n) {
+      return n.toLocaleString('id-ID');
+    }
+
+    function updateMateriCounter() {
+      const length = document.getElementById('materiInput').value.trim().length;
+      const counter = document.getElementById('materiCounter');
+      const warning = document.getElementById('materiWarning');
+      const isOver = length > MAX_MATERIAL_CHARS;
+
+      counter.innerText = `${formatNumber(length)} / ${formatNumber(MAX_MATERIAL_CHARS)} karakter`;
+      counter.classList.toggle('over', isOver);
+
+      if (isOver) {
+        const coveredPercent = Math.round((MAX_MATERIAL_CHARS / length) * 100);
+        warning.innerText = `⚠️ Materi ini ${formatNumber(length)} karakter, tapi satu podcast cuma bisa membahas ${formatNumber(MAX_MATERIAL_CHARS)} karakter pertama (sekitar ${coveredPercent}% materi). Sisanya tidak akan dibahas di podcast, kuis, maupun Tutor AI. Hapus bagian yang tidak perlu, atau pecah jadi beberapa podcast.`;
+        warning.classList.remove('hidden');
+      } else {
+        warning.classList.add('hidden');
+      }
+    }
+
+    document.getElementById('materiInput').addEventListener('input', updateMateriCounter);
+    updateMateriCounter();
+
     function getSelectedDepth() {
       const checked = document.querySelector('input[name="depthOption"]:checked');
       return checked ? checked.value : 'balanced';
@@ -1615,7 +1667,10 @@
         }
 
         document.getElementById('materiInput').value = data.text;
-        fileNameDisplay.innerText = "✅ Berhasil diekstrak: " + file.name;
+        updateMateriCounter();
+        fileNameDisplay.innerText = data.truncated
+          ? `✅ Berhasil diekstrak: ${file.name} (dokumen sangat panjang, hanya ${formatNumber(data.text.length)} dari ${formatNumber(data.originalLength)} karakter yang dimuat)`
+          : `✅ Berhasil diekstrak: ${file.name} (${formatNumber(data.text.length)} karakter)`;
       } catch (err) {
         fileNameDisplay.innerText = "❌ Gagal membaca file";
 
@@ -1637,6 +1692,14 @@
       const textInput = document.getElementById('materiInput');
       const text = textInput.value.trim();
       if (!text) return alert('Silakan isi teks materi terlebih dahulu atau unggah file PDF/PPTX/TXT!');
+
+      if (text.length > MAX_MATERIAL_CHARS) {
+        const proceed = confirm(
+          `Materi ini ${formatNumber(text.length)} karakter. Podcast hanya akan membahas ${formatNumber(MAX_MATERIAL_CHARS)} karakter pertama, sisanya dilewati.\n\n` +
+          'Tekan OK untuk tetap lanjut, atau Batal untuk merapikan materinya dulu.'
+        );
+        if (!proceed) return;
+      }
 
       const selectedDepth = getSelectedDepth();
       isProcessingPodcast = true;
