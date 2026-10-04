@@ -8,7 +8,7 @@ Dibuat untuk mengatasi rasa bosan belajar dengan cara membaca materi kering — 
 
 ## ✨ Fitur
 
-- 📄 **Ekstraksi Dokumen** — Upload PDF/TXT (maks. 10MB) atau tempel teks materi langsung.
+- 📄 **Ekstraksi Dokumen** — Upload PDF/PPTX/TXT (maks. 10MB) atau tempel teks materi langsung. Satu podcast membahas maksimal 12.000 karakter materi; ada counter karakter + peringatan kalau materi lebih panjang (tidak dipotong diam-diam).
 - 🧠 **Generate Naskah & Kuis via AI** — Google Gemini (`gemini-3.6-flash`) menyusun dialog Host ("Rian") x Expert ("Maya") plus 10 soal pilihan ganda berdasarkan materi.
 - 🎚️ **Depth Control (3 Mode)** — Ringkas ⚡ / Standar / Mendalam 📖, masing-masing mengubah instruksi prompt & batas token, bukan cuma panjang teksnya.
 - 🗣️ **Multi-Speaker Neural TTS** — Microsoft Edge Neural TTS (`node-edge-tts`), suara pria untuk Host dan wanita untuk Expert.
@@ -30,6 +30,7 @@ Dibuat untuk mengatasi rasa bosan belajar dengan cara membaca materi kering — 
 - `node-edge-tts` — Text-to-Speech
 - `fluent-ffmpeg` + `ffmpeg-static` — penggabungan audio
 - `pdf-parse` (v2, class-based API) — ekstraksi teks PDF
+- `officeparser` — ekstraksi teks PPTX (langsung dari XML, tanpa convert ke PDF)
 - `multer` — upload file
 - `@supabase/supabase-js` — auth, database, dan storage
 
@@ -39,7 +40,7 @@ Dibuat untuk mengatasi rasa bosan belajar dengan cara membaca materi kering — 
 - Supabase JS Client (CDN) untuk auth & query langsung dari browser
 
 **Database & Storage**
-- Supabase Postgres — tabel `podcasts`, `usage_logs`, `feedback`, `user_feedback_state`
+- Supabase Postgres — tabel `podcasts`, `podcast_memory`, `usage_logs`, `feedback`, `user_feedback_state`
 - Supabase Storage — bucket `podcast-audio` untuk file MP3 per segmen
 - Row Level Security (RLS) aktif, akses data selalu di-scope ke user yang login
 
@@ -47,12 +48,14 @@ Dibuat untuk mengatasi rasa bosan belajar dengan cara membaca materi kering — 
 
 ## 📂 Struktur Proyek
 
-Codebase-nya sengaja diusahakan minimal — cuma dua file utama:
+Codebase-nya sengaja diusahakan minimal — dua file utama, plus helper murni yang dipisah supaya bisa dites:
 
 ```
 podlearn/
 ├── index.html   # Seluruh frontend (UI, styling, logic client-side)
 ├── index.js     # Seluruh backend (API routes, integrasi Gemini/TTS/FFmpeg/Supabase)
+├── lib/         # Helper murni tanpa Express/Supabase/Gemini (batas materi, depth, konteks Tutor AI)
+├── test/        # Test untuk lib/ (node --test)
 └── package.json
 ```
 
@@ -90,6 +93,7 @@ TTS_BATCH_SIZE=3
 DAILY_LIMIT_CREATE_PODCAST=5
 DAILY_LIMIT_ASK_QUESTION=20
 DAILY_LIMIT_DOWNLOAD_FULL=5
+MAX_MEMORY_ITEMS=20   # jumlah riwayat podcast_memory terbaru yang disuntik ke prompt
 ```
 
 > ⚠️ `SUPABASE_URL`, `SUPABASE_ANON_KEY`, dan `GEMINI_API_KEYS` (atau `GEMINI_API_KEY`) **wajib diisi** — server akan langsung `throw` saat start kalau kosong.
@@ -97,7 +101,7 @@ DAILY_LIMIT_DOWNLOAD_FULL=5
 ### 4. Siapkan Supabase
 
 Pastikan project Supabase punya:
-- Tabel `podcasts`, `usage_logs`, `feedback`, `user_feedback_state` dengan RLS aktif
+- Tabel `podcasts`, `podcast_memory`, `usage_logs`, `feedback`, `user_feedback_state` dengan RLS aktif
 - Bucket storage `podcast-audio`
 - Google OAuth provider diaktifkan di Supabase Auth
 - GRANT (SELECT/INSERT/UPDATE) ke role `authenticated` pada semua tabel di atas
@@ -110,12 +114,21 @@ node index.js
 
 Server jalan di `http://localhost:5000` (atau sesuai `PORT`), dan otomatis serve `index.html` sebagai static file.
 
+### 6. Jalankan test
+
+```bash
+npm test
+```
+
+Test memakai test runner bawaan Node (`node --test`, tanpa dependency tambahan) dan hanya menguji helper murni di `lib/`, jadi tidak butuh `.env` atau koneksi ke Supabase/Gemini.
+
 ---
 
 ## 🔑 Catatan Implementasi
 
 - **Model AI** terpusat di satu konstanta `GEMINI_MODEL`, gampang diganti kalau ada model baru/deprecated.
 - **TTS & full-podcast generation** dijalankan secara *batched* (bukan sequential satu-satu, bukan juga sekaligus semua) untuk balance antara kecepatan dan risiko throttle dari endpoint TTS.
+- **Batas panjang materi** ada di `lib/material.js` (`MAX_MATERIAL_CHARS` = 12.000 karakter, dipakai generate podcast & Tutor AI). Yang membatasi sebenarnya output (naskah + 10 kuis), bukan kemampuan Gemini membaca input. Angka yang sama diduplikasi di `index.html` untuk counter karakter — kalau diubah, ubah dua-duanya.
 - **File audio temporer** di server otomatis dibersihkan tiap 10 menit (file berumur >15 menit dihapus).
 - Endpoint `/temp-audio` dan seluruh endpoint API dilindungi middleware auth (Bearer JWT dari Supabase).
 
