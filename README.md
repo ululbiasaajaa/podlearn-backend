@@ -13,6 +13,7 @@ Dibuat untuk mengatasi rasa bosan belajar dengan cara membaca materi kering — 
 - 🎚️ **Depth Control (3 Mode)** — Ringkas ⚡ / Standar / Mendalam 📖, masing-masing mengubah instruksi prompt & batas token, bukan cuma panjang teksnya.
 - 🗣️ **Multi-Speaker Neural TTS** — Microsoft Edge Neural TTS (`node-edge-tts`), suara pria untuk Host dan wanita untuk Expert.
 - 🎧 **Player Segmen Interaktif** — Putar per segmen (bukan file gabungan), kontrol prev/next, kecepatan putar 1x–2x, bubble naskah yang bisa diklik langsung ke segmen tersebut.
+- 🔍 **Bedah Hasil Kuis** — Sebelum jawaban dibuka, user memilih *Yakin* atau *Ragu*. Hasil kuis dikelompokkan jadi Paham / Benar tapi nebak / Salah & ragu / Salah tapi yakin, menampilkan konsep yang masih goyah, dan tiap soal yang perlu dicek ulang punya tombol **🎧 Dengerin lagi bagian ini** yang loncat ke segmen podcast yang membahasnya.
 - 💬 **Tanya Tutor AI** — Pause podcast kapan saja dan tanya AI soal bagian yang lagi didengar; jawaban dihasilkan dari materi sumber + konteks beberapa segmen terakhir.
 - 💾 **Unduh Full Podcast** — Gabungkan seluruh segmen jadi satu file MP3 via FFmpeg di server.
 - 🔐 **Login Google & Riwayat Tersimpan** — Autentikasi via Supabase, riwayat podcast per-user (lanjutkan/mulai ulang/hapus), progres pemutaran otomatis tersimpan.
@@ -55,7 +56,7 @@ podlearn/
 ├── index.html   # Seluruh frontend (UI, styling, logic client-side)
 ├── index.js     # Seluruh backend (API routes, integrasi Gemini/TTS/FFmpeg/Supabase)
 ├── lib/         # Helper murni tanpa Express/Supabase/Gemini (batas materi, depth, konteks Tutor AI)
-├── test/        # Test untuk lib/ (node --test)
+├── test/        # Test untuk lib/ + logika kuis di index.html (node --test)
 └── package.json
 ```
 

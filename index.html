@@ -701,6 +701,63 @@
     .quiz-opt.correct { background: #DEF7EC; border-color: #31C48D; color: #03543F; font-weight: 800; }
     .quiz-opt.wrong { background: #FDE8E8; border-color: #F05252; color: #9B1C1C; font-weight: 800; }
     .quiz-opt.faded { opacity: 0.45; }
+    .quiz-opt.pending { border-color: var(--primary); background: var(--primary-light); font-weight: 800; }
+
+    .quiz-confidence, .quiz-feedback {
+      margin-top: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+      font-size: 0.82rem;
+      line-height: 1.5;
+    }
+    .quiz-confidence { color: var(--ink); font-weight: 700; }
+    .quiz-confidence-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+    .quiz-feedback { color: var(--ink-soft); }
+    .quiz-feedback.cat-misconception strong, .review-item.cat-misconception .review-item-tag { color: var(--danger); }
+
+    .quiz-review {
+      margin-top: 8px;
+      padding: 18px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--primary);
+      background: var(--primary-light);
+    }
+    .review-title { font-weight: 800; font-size: 1rem; margin-bottom: 12px; color: var(--ink); }
+    .review-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .review-tile {
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      border-radius: var(--radius-sm);
+      padding: 10px;
+      text-align: center;
+    }
+    .review-tile.cat-misconception { border-color: var(--danger); }
+    .review-tile-num { font-size: 1.4rem; font-weight: 800; color: var(--ink); }
+    .review-tile-label { font-size: 0.72rem; color: var(--ink-soft); font-weight: 600; }
+    .review-concepts { margin: 14px 0 0; font-size: 0.85rem; color: var(--ink); line-height: 1.8; }
+    .review-chip {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 999px;
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      font-weight: 700;
+      font-size: 0.78rem;
+    }
+    .review-subtitle { margin: 16px 0 8px; font-weight: 800; font-size: 0.85rem; color: var(--ink); }
+    .review-item {
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      border-radius: var(--radius-sm);
+      padding: 12px;
+      margin-bottom: 8px;
+    }
+    .review-item-tag { font-size: 0.75rem; font-weight: 800; color: var(--primary); }
+    .review-item-question { margin: 4px 0 8px; font-size: 0.85rem; color: var(--ink); line-height: 1.5; }
+    .relisten-btn { white-space: nowrap; }
 
     /* ---------- History List ---------- */
     .history-item {
@@ -751,6 +808,7 @@
     @media (max-width: 640px) {
       .depth-grid { grid-template-columns: 1fr; }
       .quiz-options { grid-template-columns: 1fr; }
+      .review-grid { grid-template-columns: repeat(2, 1fr); }
       .hero-card { padding: 20px; }
       .hero-title { font-size: 1.35rem; }
     }
@@ -985,6 +1043,7 @@
           <span id="scoreBadge" class="hidden" style="font-weight: 800; font-size: 0.85rem; color: var(--primary);">Skor: <span id="scoreValue">0</span>/<span id="totalQuestions">10</span></span>
         </div>
         <div id="quizContainer"></div>
+        <div id="quizReview" class="quiz-review hidden"></div>
       </div>
 
     </div>
@@ -1083,6 +1142,8 @@
     let currentSegmentIndex = 0;
     let currentQuizData = [];
     let userAnswers = {};
+    let pendingAnswers = {};   // opsi dipilih, menunggu tingkat keyakinan
+    let userConfidence = {};   // 'sure' | 'unsure' per soal
     let currentPlaybackRate = 1;
     let userPodcastsList = [];
 
@@ -1171,7 +1232,7 @@
       currentInterjections = [];
       currentSegmentIndex = 0;
       currentQuizData = [];
-      userAnswers = {};
+      resetQuizState();
       userPodcastsList = [];
       activeDeletingPodcastIds.clear();
 
@@ -1181,7 +1242,6 @@
       updateMateriCounter();
       document.getElementById('fileNameDisplay').innerText = 'Belum ada file dipilih';
       document.getElementById('tutorAnswerBox').classList.add('hidden');
-      document.getElementById('scoreBadge').classList.add('hidden');
     }
 
     async function loginWithGoogle() {
@@ -1301,7 +1361,7 @@
       currentAudioSegments = selectedPod.audio_segments || [];
       currentInterjections = []; // interjection nggak disimpan, mulai bersih tiap buka podcast
       currentQuizData = selectedPod.quiz_data || [];
-      userAnswers = {};
+      resetQuizState();
 
       if (selectedPod.source_text) {
         document.getElementById('materiInput').value = selectedPod.source_text;
@@ -1312,7 +1372,6 @@
       renderQuiz();
 
       document.getElementById('tutorAnswerBox').classList.add('hidden');
-      document.getElementById('scoreBadge').classList.add('hidden');
 
       document.getElementById('resultContainer').classList.remove('hidden');
 
@@ -1717,9 +1776,8 @@
       result.classList.add('hidden');
       document.getElementById('tutorAnswerBox').classList.add('hidden');
 
-      userAnswers = {};
+      resetQuizState();
       currentInterjections = [];
-      document.getElementById('scoreBadge').classList.add('hidden');
       let createdDbPodcastId = null;
 
       try {
@@ -2165,6 +2223,9 @@
       }
     }
 
+    // <quiz-review-logic>
+    // Logika kuis yang murni (tanpa DOM). Blok ini dites langsung dari
+    // test/quiz-review-logic.test.js -- jangan pakai document/window di sini.
     function extractOptionKey(optText, idx) {
       const match = optText.trim().match(/^([A-Za-z])[.\)\-:]/);
       if (match) return match[1].toUpperCase();
@@ -2184,57 +2245,242 @@
       return stripLetterPrefix(rawAns) === stripLetterPrefix(optText);
     }
 
+    function isChosenAnswerCorrect(q, chosenKey) {
+      const chosenOptIdx = q.options.findIndex((opt, i) => extractOptionKey(opt, i) === chosenKey);
+      return chosenOptIdx !== -1 && isAnswerMatch(q, q.options[chosenOptIdx], chosenKey);
+    }
+
+    // 4 kategori dari kombinasi benar/salah x yakin/ragu. Nilai "7/10" saja
+    // nggak bilang harus ngapain; kategori ini yang ngasih tahu. "Salah tapi
+    // yakin" paling penting: salah paham yang nggak disadari.
+    const ANSWER_CATEGORIES = {
+      misconception: { icon: '⚠️', label: 'Salah tapi yakin', hint: 'Paling penting dicek ulang: kamu yakin, padahal konsepnya belum tepat.', priority: 0 },
+      gap: { icon: '📖', label: 'Salah & ragu', hint: 'Bagian ini memang belum nempel. Dengerin lagi penjelasannya.', priority: 1 },
+      lucky: { icon: '🍀', label: 'Benar tapi nebak', hint: 'Jawabanmu benar, tapi belum yakin. Dengerin lagi biar bukan kebetulan.', priority: 2 },
+      mastered: { icon: '✅', label: 'Paham', hint: 'Benar dan yakin.', priority: 3 }
+    };
+
+    function classifyAnswer(isCorrect, confidence) {
+      const isSure = confidence === 'sure';
+      if (isCorrect) return isSure ? 'mastered' : 'lucky';
+      return isSure ? 'misconception' : 'gap';
+    }
+
+    // source_segment di kuis menunjuk ke index naskah ASLI. Fitur "nyela"
+    // versi suara menyisipkan segmen (isInterjection) ke array naskah yang
+    // sama, jadi index aslinya harus dipetakan ulang ke posisi sekarang.
+    function resolveScriptIndex(script, originalIndex) {
+      if (!Array.isArray(script) || !Number.isInteger(originalIndex) || originalIndex < 0) return null;
+      let originalCount = -1;
+      for (let i = 0; i < script.length; i++) {
+        if (script[i] && script[i].isInterjection) continue;
+        originalCount++;
+        if (originalCount === originalIndex) return i;
+      }
+      return null;
+    }
+
+    function buildQuizReview(quizData, answers, confidences) {
+      const items = quizData.map((q, idx) => {
+        const isCorrect = isChosenAnswerCorrect(q, answers[idx]);
+        return {
+          questionIndex: idx,
+          question: q.question,
+          concept: typeof q.concept === 'string' && q.concept.trim() ? q.concept.trim() : null,
+          sourceSegment: Number.isInteger(q.source_segment) ? q.source_segment : null,
+          isCorrect,
+          category: classifyAnswer(isCorrect, confidences[idx])
+        };
+      });
+
+      const counts = { mastered: 0, lucky: 0, gap: 0, misconception: 0 };
+      items.forEach(item => { counts[item.category]++; });
+
+      const toReview = items
+        .filter(item => item.category !== 'mastered')
+        .sort((a, b) =>
+          ANSWER_CATEGORIES[a.category].priority - ANSWER_CATEGORIES[b.category].priority ||
+          a.questionIndex - b.questionIndex
+        );
+
+      // Konsep yang masih goyah, urut dari yang paling sering muncul di
+      // soal yang perlu dicek ulang. Dibandingkan tanpa beda huruf besar/kecil.
+      const conceptMap = new Map();
+      toReview.forEach(item => {
+        if (!item.concept) return;
+        const key = item.concept.toLowerCase();
+        const entry = conceptMap.get(key) || { concept: item.concept, count: 0 };
+        entry.count++;
+        conceptMap.set(key, entry);
+      });
+      const weakConcepts = [...conceptMap.values()]
+        .sort((a, b) => b.count - a.count)
+        .map(entry => entry.concept);
+
+      return {
+        score: items.filter(item => item.isCorrect).length,
+        total: items.length,
+        counts,
+        toReview,
+        weakConcepts
+      };
+    }
+    // </quiz-review-logic>
+
+    function resetQuizState() {
+      userAnswers = {};
+      pendingAnswers = {};
+      userConfidence = {};
+      document.getElementById('scoreBadge').classList.add('hidden');
+      const review = document.getElementById('quizReview');
+      review.classList.add('hidden');
+      review.innerHTML = '';
+    }
+
+    function relistenButton(sourceSegment) {
+      if (sourceSegment === null) return '';
+      return `<button type="button" class="btn btn-ghost btn-sm relisten-btn" onclick="relistenFromQuiz(${sourceSegment})">🎧 Dengerin lagi bagian ini</button>`;
+    }
+
     function renderQuiz() {
       const quizBox = document.getElementById('quizContainer');
-      quizBox.innerHTML = currentQuizData.map((q, qIdx) => `
-        <div class="quiz-item">
-          <p style="font-weight:700; font-size:0.9rem; margin:0 0 10px;">${qIdx + 1}. ${q.question}</p>
-          <div class="quiz-options">
-            ${q.options.map((opt, optIdx) => {
-              const optKey = extractOptionKey(opt, optIdx);
-              const isSelected = userAnswers[qIdx] === optKey;
-              const isCorrect = isAnswerMatch(q, opt, optKey);
-              const hasAnswered = userAnswers[qIdx] !== undefined;
+      quizBox.innerHTML = currentQuizData.map((q, qIdx) => {
+        const hasAnswered = userAnswers[qIdx] !== undefined;
+        const pendingKey = pendingAnswers[qIdx];
 
-              let stateClass = '';
-              if (hasAnswered) {
-                if (isCorrect) stateClass = 'correct';
-                else if (isSelected && !isCorrect) stateClass = 'wrong';
-                else stateClass = 'faded';
-              }
+        const optionsHtml = q.options.map((opt, optIdx) => {
+          const optKey = extractOptionKey(opt, optIdx);
+          const isSelected = userAnswers[qIdx] === optKey;
+          const isCorrect = isAnswerMatch(q, opt, optKey);
 
-              return `
+          let stateClass = '';
+          if (hasAnswered) {
+            if (isCorrect) stateClass = 'correct';
+            else if (isSelected && !isCorrect) stateClass = 'wrong';
+            else stateClass = 'faded';
+          } else if (pendingKey === optKey) {
+            stateClass = 'pending';
+          }
+
+          return `
                 <button
                   onclick="selectAnswer(${qIdx}, '${optKey}')"
                   ${hasAnswered ? 'disabled' : ''}
                   class="quiz-opt ${stateClass}">
-                  ${opt}
+                  ${escapeHtml(opt)}
                 </button>
               `;
-            }).join('')}
-          </div>
+        }).join('');
+
+        // Sebelum jawaban dibuka, tanya dulu seberapa yakin -- ini yang
+        // bikin hasil kuis bisa membedakan "paham" vs "kebetulan benar".
+        let afterOptions = '';
+        if (!hasAnswered && pendingKey !== undefined) {
+          afterOptions = `
+          <div class="quiz-confidence">
+            <span>Seberapa yakin sama jawabanmu?</span>
+            <div class="quiz-confidence-btns">
+              <button type="button" class="btn btn-primary btn-sm" onclick="confirmAnswer(${qIdx}, 'sure')">💪 Yakin</button>
+              <button type="button" class="btn btn-ghost btn-sm" onclick="confirmAnswer(${qIdx}, 'unsure')">🤔 Ragu / nebak</button>
+            </div>
+          </div>`;
+        } else if (hasAnswered) {
+          const category = classifyAnswer(isChosenAnswerCorrect(q, userAnswers[qIdx]), userConfidence[qIdx]);
+          const info = ANSWER_CATEGORIES[category];
+          const sourceSegment = Number.isInteger(q.source_segment) ? q.source_segment : null;
+          afterOptions = `
+          <div class="quiz-feedback cat-${category}">
+            <span>${info.icon} <strong>${info.label}</strong>${category === 'mastered' ? '' : ` · ${info.hint}`}</span>
+            ${category === 'mastered' ? '' : relistenButton(sourceSegment)}
+          </div>`;
+        }
+
+        return `
+        <div class="quiz-item">
+          <p style="font-weight:700; font-size:0.9rem; margin:0 0 10px;">${qIdx + 1}. ${escapeHtml(q.question)}</p>
+          <div class="quiz-options">${optionsHtml}</div>
+          ${afterOptions}
         </div>
-      `).join('');
+      `;
+      }).join('');
     }
 
+    // Klik opsi = memilih (masih bisa ganti); jawaban baru dikunci & dibuka
+    // setelah user memilih tingkat keyakinan di confirmAnswer().
     function selectAnswer(qIdx, selectedKey) {
-      userAnswers[qIdx] = selectedKey;
+      if (userAnswers[qIdx] !== undefined) return;
+      pendingAnswers[qIdx] = selectedKey;
+      renderQuiz();
+    }
+
+    function confirmAnswer(qIdx, confidence) {
+      const chosenKey = pendingAnswers[qIdx];
+      if (chosenKey === undefined || userAnswers[qIdx] !== undefined) return;
+
+      userAnswers[qIdx] = chosenKey;
+      userConfidence[qIdx] = confidence;
+      delete pendingAnswers[qIdx];
       renderQuiz();
 
       if (Object.keys(userAnswers).length === currentQuizData.length) {
-        let correctCount = 0;
-        currentQuizData.forEach((q, idx) => {
-          const chosenKey = userAnswers[idx];
-          const chosenOptIdx = q.options.findIndex((opt, i) => extractOptionKey(opt, i) === chosenKey);
-          if (chosenOptIdx !== -1 && isAnswerMatch(q, q.options[chosenOptIdx], chosenKey)) {
-            correctCount++;
-          }
-        });
-
-        document.getElementById('scoreValue').innerText = correctCount;
-        document.getElementById('totalQuestions').innerText = currentQuizData.length;
+        const review = buildQuizReview(currentQuizData, userAnswers, userConfidence);
+        document.getElementById('scoreValue').innerText = review.score;
+        document.getElementById('totalQuestions').innerText = review.total;
         document.getElementById('scoreBadge').classList.remove('hidden');
+        renderQuizReview(review);
       }
+    }
+
+    // 📝 Layar "bedah hasil": nilai saja bikin orang berhenti di situ.
+    // Di sini nilai diubah jadi langkah berikutnya: konsep mana yang goyah,
+    // soal mana yang perlu dicek, dan tombol langsung dengerin bagiannya.
+    function renderQuizReview(review) {
+      const box = document.getElementById('quizReview');
+      const tileOrder = ['mastered', 'lucky', 'gap', 'misconception'];
+
+      const tiles = tileOrder.map(key => `
+        <div class="review-tile cat-${key}">
+          <div class="review-tile-num">${review.counts[key]}</div>
+          <div class="review-tile-label">${ANSWER_CATEGORIES[key].icon} ${ANSWER_CATEGORIES[key].label}</div>
+        </div>`).join('');
+
+      const conceptsHtml = review.weakConcepts.length > 0
+        ? `<p class="review-concepts">Kamu masih goyah di: ${review.weakConcepts.map(c => `<span class="review-chip">${escapeHtml(c)}</span>`).join(' ')}</p>`
+        : '';
+
+      const listHtml = review.toReview.length > 0
+        ? `<div class="review-subtitle">Yang perlu dicek ulang (paling penting di atas)</div>
+           ${review.toReview.map(item => {
+             const info = ANSWER_CATEGORIES[item.category];
+             return `
+             <div class="review-item cat-${item.category}">
+               <div class="review-item-tag">${info.icon} ${info.label}${item.concept ? ` · ${escapeHtml(item.concept)}` : ''}</div>
+               <p class="review-item-question">${item.questionIndex + 1}. ${escapeHtml(item.question)}</p>
+               ${relistenButton(item.sourceSegment)}
+             </div>`;
+           }).join('')}`
+        : `<p class="review-concepts">🎉 Semua benar dan kamu yakin. Materi ini udah nempel!</p>`;
+
+      box.innerHTML = `
+        <div class="review-title">🔍 Bedah Hasil Kuis · ${review.score}/${review.total}</div>
+        <div class="review-grid">${tiles}</div>
+        ${conceptsHtml}
+        ${listHtml}
+      `;
+      box.classList.remove('hidden');
+      box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function relistenFromQuiz(originalSegmentIndex) {
+      const scriptIndex = resolveScriptIndex(currentPodcastScript, originalSegmentIndex);
+      if (scriptIndex === null || !currentAudioSegments[scriptIndex]) {
+        alert('Audio bagian ini belum siap. Tunggu proses audio selesai, lalu coba lagi.');
+        return;
+      }
+      loadAndPlaySegment(scriptIndex);
+      document.getElementById('playerCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const bubble = document.getElementById(`script-bubble-${scriptIndex}`);
+      if (bubble) bubble.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   </script>
 </body>
