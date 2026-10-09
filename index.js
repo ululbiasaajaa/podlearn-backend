@@ -110,8 +110,8 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 // Service Role Client khusus untuk kebutuhan administratif internal
 const supabaseAdmin = SUPABASE_SERVICE_ROLE_KEY
   ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-      auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false }
-    })
+    auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false }
+  })
   : null;
 
 if (supabaseAdmin) {
@@ -671,7 +671,7 @@ async function checkAndLogUsage(userSupabase, userId, actionType) {
     console.error('❌ [Usage Check Error] details:', countError.details);
     console.error('❌ [Usage Check Error] hint:', countError.hint);
     console.error('❌ [Usage Check Error] full JSON:', JSON.stringify(countError));
-    return { allowed: true, currentCount: 0, limit: dailyLimit };
+    return { allowed: true, currentCount: 0, limit: dailyLimit, logId: null };
   }
 
   const currentCount = count || 0;
@@ -679,9 +679,11 @@ async function checkAndLogUsage(userSupabase, userId, actionType) {
     return { allowed: false, currentCount, limit: dailyLimit };
   }
 
-  const { error: insertError } = await userSupabase
+  const { data: insertedRow, error: insertError } = await userSupabase
     .from('usage_logs')
-    .insert([{ user_id: userId, action_type: actionType }]);
+    .insert([{ user_id: userId, action_type: actionType }])
+    .select('id')
+    .single();
 
   if (insertError) {
     console.error('❌ [Usage Log Insert Error] code:', insertError.code);
@@ -690,7 +692,12 @@ async function checkAndLogUsage(userSupabase, userId, actionType) {
     console.error('❌ [Usage Log Insert Error] hint:', insertError.hint);
   }
 
-  return { allowed: true, currentCount: currentCount + 1, limit: dailyLimit };
+  return {
+    allowed: true,
+    currentCount: currentCount + 1,
+    limit: dailyLimit,
+    logId: insertedRow?.id ?? null
+  };
 }
 
 // ============================================================
@@ -746,7 +753,7 @@ app.post('/api/extract-file', requireAuth, upload.single('file'), async (req, re
         throw parseErr; // tetap dilempar ke catch luar agar response ke client tidak berubah
       } finally {
         if (parser && typeof parser.destroy === 'function') {
-          try { await parser.destroy(); } catch (destroyErr) {}
+          try { await parser.destroy(); } catch (destroyErr) { }
         }
       }
     } else if (originalName.endsWith('.txt') || fileMime === 'text/plain') {
@@ -821,7 +828,7 @@ app.post('/api/extract-file', requireAuth, upload.single('file'), async (req, re
     console.error('❌ [Extract File Error]:', error.message || error);
 
     if (filePath && fs.existsSync(filePath)) {
-      try { fs.unlinkSync(filePath); } catch (e) {}
+      try { fs.unlinkSync(filePath); } catch (e) { }
     }
 
     return res.status(500).json({
@@ -834,6 +841,7 @@ app.post('/api/extract-file', requireAuth, upload.single('file'), async (req, re
 // Endpoint 1: Generate Naskah & Quiz (Protected)
 app.post('/api/generate-script', requireAuth, async (req, res) => {
   const userId = req.user.id;
+  let usageLogId = null;
 
   // 🔒 Cegah user yang sama menjalankan 2 generation job bersamaan.
   if (!acquireGenerationLock(userId, 'generate-script')) {
@@ -856,6 +864,8 @@ app.post('/api/generate-script', requireAuth, async (req, res) => {
 
     // 📊 Rate limit check: batasi jumlah podcast baru per-hari per-user
     const usageCheck = await checkAndLogUsage(req.supabase, req.user.id, 'create_podcast');
+    usageLogId = usageCheck.logId;
+
     if (!usageCheck.allowed) {
       return res.status(429).json({
         success: false,
@@ -934,9 +944,9 @@ ${cleanText}
     const segmentCount = Array.isArray(parsedData.podcast_script) ? parsedData.podcast_script.length : 0;
     const wordCount = Array.isArray(parsedData.podcast_script)
       ? parsedData.podcast_script.reduce((sum, seg) => {
-          const words = (seg?.text || '').trim().split(/\s+/).filter(Boolean).length;
-          return sum + words;
-        }, 0)
+        const words = (seg?.text || '').trim().split(/\s+/).filter(Boolean).length;
+        return sum + words;
+      }, 0)
       : 0;
 
     console.log(`📊 [Generate Script Metrics] depth=${depth} wordCount=${wordCount} segmentCount=${segmentCount} memoryItemsInjected=${memoryItemsInjected} materialChars=${material.originalLength} materialTruncated=${material.truncated} quizWithSegment=${parsedData.quiz.filter(q => q.source_segment !== null).length}/${parsedData.quiz.length}`);
@@ -959,6 +969,20 @@ ${cleanText}
     console.error(`❌ [Generate Script Error]${overloaded ? ' (Gemini overload)' : ''} message:`, error?.message);
     console.error('❌ [Generate Script Error] stack:', error?.stack);
     if (overloaded) {
+      if (usageLogId) {
+        try {
+          const { data: removed, error: refundError } = await req.supabase
+            .from('usage_logs')
+            .delete()
+            .eq('id', usageLogId)
+            .select('id');
+          if (refundError || !removed || removed.length === 0) {
+            console.warn('⚠️ [Usage Refund] gagal membatalkan kuota:', refundError?.message || 'tidak ada baris yang terhapus (cek policy delete)');
+          }
+        } catch (refundErr) {
+          console.warn('⚠️[Usage Refund] error:', refundErr?.message);
+        }
+      }
       return res.status(503).json({
         success: false,
         overloaded: true,
@@ -1094,7 +1118,7 @@ app.post('/api/generate-audio-segments', requireAuth, async (req, res) => {
 
     createdTempFiles.forEach(f => {
       if (fs.existsSync(f)) {
-        try { fs.unlinkSync(f); } catch (e) {}
+        try { fs.unlinkSync(f); } catch (e) { }
       }
     });
 
@@ -1114,9 +1138,9 @@ app.post('/api/generate-full-podcast', requireAuth, async (req, res) => {
   const LOCK_JOB_TYPE = 'generate-full-podcast';
 
   const cleanAllTemp = () => {
-    tempFiles.forEach(f => { if (fs.existsSync(f)) try { fs.unlinkSync(f); } catch (e) {} });
-    if (fs.existsSync(listFilePath)) try { fs.unlinkSync(listFilePath); } catch (e) {}
-    if (fs.existsSync(outputPath)) try { fs.unlinkSync(outputPath); } catch (e) {}
+    tempFiles.forEach(f => { if (fs.existsSync(f)) try { fs.unlinkSync(f); } catch (e) { } });
+    if (fs.existsSync(listFilePath)) try { fs.unlinkSync(listFilePath); } catch (e) { }
+    if (fs.existsSync(outputPath)) try { fs.unlinkSync(outputPath); } catch (e) { }
   };
 
   // 🔒 Cegah user yang sama menjalankan 2 generation job bersamaan.
